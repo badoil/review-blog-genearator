@@ -1,0 +1,311 @@
+import * as cheerio from 'cheerio';
+import type { BlogPost } from '../types/blog';
+import { chromium } from 'playwright';
+
+/**
+ * 네이버 블로그 URL인지 확인
+ */
+function isNaverBlogUrl(url: string): boolean {
+  return url.includes('blog.naver.com') || url.includes('naver.me');
+}
+
+/**
+ * 네이버 블로그 글 크롤링
+ * 네이버 블로그는 iframe으로 구성되어 있어서 직접 접근이 어렵습니다.
+ * 실제 본문 URL로 변환해서 크롤링합니다.
+ */
+// 저장된 세션 쿠키 (파일에서 로드)
+let storedCookies: any[] | null = null;
+
+/**
+ * 네이버 세션 쿠키 설정
+ */
+export function setNaverCookies(cookies: any[]) {
+  storedCookies = cookies;
+  console.log('[Crawler] 세션 쿠키 설정 완료:', cookies.length, '개');
+}
+
+export class CrawlerService {
+  private baseUrl = 'https://blog.naver.com';
+
+  /**
+   * 네이버 블로그 글 가져오기
+   * Playwright를 사용하여 JavaScript 렌더링 후 크롤링
+   * @param url 블로그 URL
+   * @param useSession 저장된 세션 쿠키 사용 여부
+   */
+  async fetchBlogPost(url: string, useSession: boolean = false): Promise<BlogPost> {
+    if (!isNaverBlogUrl(url)) {
+      throw new Error('네이버 블로그 URL이 아닙니다.');
+    }
+
+    console.log('[Crawler] Playwright로 블로그 크롤링 시작:', url, useSession ? '(세션 사용)' : '(세션 없음)');
+
+    // 브라우저 런치
+    const browser = await chromium.launch();
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+    });
+
+    // 저장된 쿠키 적용 (세션 사용 시)
+    if (useSession && storedCookies) {
+      await context.addCookies(storedCookies);
+      console.log('[Crawler] 저장된 쿠키 적용 완료');
+    }
+
+    const page = await context.newPage();
+
+    try {
+      // 페이지 로드 (JavaScript 렌더링 대기 - 더 길게)
+      console.log('[Crawler] 페이지 로드 시작...');
+      await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+
+      // 네이버 블로그는 iframe을 사용하므로 iframe 찾기
+      console.log('[Crawler] 페이지 내 모든 iframe 확인...');
+      const frames = page.frames();
+      console.log('[Crawler] 발견된 frame 개수:', frames.length);
+
+      // 네이버 블로그 본문이 있는 frame 찾기
+      let targetFrame = page.mainFrame();
+      let foundIframe = false;
+
+      for (const frame of frames) {
+        const frameUrl = frame.url();
+        console.log('[Crawler] Frame URL:', frameUrl);
+
+        // 본문 frame은 보통 blog.naver.com/PostView.nhn 등의 URL을 가짐
+        if (frameUrl && (frameUrl.includes('PostView') || frameUrl.includes('post') || frameUrl.includes('blog.naver.com'))) {
+          console.log('[Crawler] 본문 frame 발견:', frameUrl);
+          targetFrame = frame;
+          foundIframe = true;
+          break;
+        }
+      }
+
+      // frame 렌더링 대기
+      console.log('[Crawler] frame 렌더링 대기 중...');
+      await targetFrame.waitForLoadState('networkidle').catch(() => {
+        console.log('[Crawler] networkidle timeout, 계속 진행');
+      });
+      await targetFrame.waitForTimeout(2000);
+
+      // 네이버 블로그는 중첩된 iframe 구조 (frame → mainFrame → 본문)
+      // 제목은 outer frame에서, 본문은 중첩 frame에서 가져오기
+      console.log('[Crawler] 중첩 iframe 확인...');
+
+      // 제목은 outer frame의 title 태그에서 추출
+      const outerTitle = await targetFrame.evaluate(() => {
+        return document.title || '';
+      });
+      console.log('[Crawler] outer frame title:', outerTitle);
+
+      const nestedIframe = await targetFrame.$('iframe#mainFrame');
+      let contentHtml = '';
+
+      if (nestedIframe) {
+        console.log('[Crawler] 중첩 mainFrame 발견, 내부로 접근...');
+        const nestedFrame = await nestedIframe.contentFrame();
+        if (nestedFrame) {
+          // 중첩 frame 렌더링 대기
+          await nestedFrame.waitForLoadState('networkidle').catch(() => {});
+          await nestedFrame.waitForTimeout(3000);
+          contentHtml = await nestedFrame.evaluate(() => {
+            return document.body?.innerHTML || document.documentElement?.outerHTML || '';
+          });
+          console.log('[Crawler] 중첩 frame 내부 HTML 길이:', contentHtml.length);
+        } else {
+          console.warn('[Crawler] 중첩 frame 접근 실패');
+          contentHtml = await targetFrame.evaluate(() => {
+            return document.body?.innerHTML || '';
+          });
+        }
+      } else {
+        console.log('[Crawler] 중첩 iframe 없음, 현재 frame 사용');
+        contentHtml = await targetFrame.evaluate(() => {
+          return document.body?.innerHTML || document.documentElement?.outerHTML || '';
+        });
+      }
+
+      console.log('[Crawler] 사용하는 frame:', nestedIframe ? 'nested mainFrame (본문)' : '현재 frame');
+      console.log('[Crawler] 전체 HTML 길이:', contentHtml.length);
+
+      console.log('[Crawler] 전체 HTML 길이:', contentHtml.length);
+      console.log('[Crawler] HTML 미리보기 (처리 1000자):', contentHtml.substring(0, 1000));
+
+      const $ = cheerio.load(contentHtml);
+
+      // 네이버 블로그 본문 선택자
+      const title = this.extractTitle($, outerTitle);
+      const content = this.extractContent($);
+
+      console.log('[Crawler] 크롤링 결과:', {
+        titleLength: title.length,
+        contentLength: content.length,
+        titlePreview: title.substring(0, 50),
+      });
+
+      if (!title && !content) {
+        console.warn('[Crawler] 제목과 본문을 모두 찾지 못함');
+      }
+
+      return {
+        title,
+        content,
+        url,
+      };
+    } finally {
+      await browser.close();
+    }
+  }
+
+  /**
+   * 실제 블로그 본문 URL 변환
+   * blog.naver.com/ID -> 실제 본문 URL
+   */
+  private async getActualBlogUrl(url: string): Promise<string> {
+    // 이미 본문 URL 형태인 경우
+    if (url.match(/blog\.naver\.com\/.*\/\d+$/)) {
+      return url;
+    }
+
+    // naver.me 단축 URL인 경우
+    if (url.includes('naver.me')) {
+      const response = await fetch(url, {
+        redirect: 'manual',
+      });
+      const location = response.headers.get('location');
+      if (location) {
+        return location;
+      }
+    }
+
+    return url;
+  }
+
+  /**
+   * 제목 추출
+   * @param $ Cheerio 인스턴스
+   * @param outerTitle outer frame의 title 태그 내용 (옵션)
+   */
+  private extractTitle($: cheerio.CheerioAPI, outerTitle?: string): string {
+    // outer frame의 title이 있으면 먼저 처리
+    if (outerTitle) {
+      console.log('[Crawler] outer title 사용:', outerTitle);
+      // 다양한 형식의 네이버 블로그 접미사 제거
+      let cleanTitle = outerTitle
+        .replace(/:: 네이버블로그$/, '')
+        .replace(/ : 네이버블로그$/, '')
+        .replace(/ : 네이버 블로그$/, '')
+        .replace(/:: 네이버 블로그$/, '')
+        .replace(/\s*:\s*네이버블로그.*$/, '')
+        .replace(/\s*:\s*네이버 블로그.*$/, '')
+        .trim();
+
+      if (cleanTitle && cleanTitle.length > 0) {
+        console.log('[Crawler] outer title에서 제목 추출:', cleanTitle);
+        return cleanTitle;
+      }
+    }
+
+    // 네이버 블로그 제목 선택자 (다양한 구조 대응)
+    const titleSelectors = [
+      '.se-main-title',
+      '.se-title',
+      'h3.se-title',
+      '.blog_title',
+      '.se-f-title .se-title',
+      '.se_title',
+      'title', // HTML title 태그도 확인
+    ];
+
+    for (const selector of titleSelectors) {
+      const title = $(selector).first().text().trim();
+      if (title && title.length > 0 && selector !== 'title') {
+        console.log(`[Crawler] 제목 발견 (${selector}):`, title);
+        return title;
+      }
+    }
+
+    // title 태그에서 블로그 이름 제거하고 시도
+    const htmlTitle = $('title').text().trim();
+    console.log('[Crawler] HTML title 원본:', htmlTitle);
+    if (htmlTitle) {
+      // 다양한 형식의 네이버 블로그 접미사 제거
+      let cleanTitle = htmlTitle
+        .replace(/:: 네이버블로그$/, '')
+        .replace(/ : 네이버블로그$/, '')
+        .replace(/ : 네이버 블로그$/, '')
+        .replace(/:: 네이버 블로그$/, '')
+        .replace(/\s*:\s*네이버블로그.*$/, '')
+        .replace(/\s*:\s*네이버 블로그.*$/, '')
+        .trim();
+
+      if (cleanTitle && cleanTitle.length > 0) {
+        console.log('[Crawler] HTML title에서 제목 추출:', cleanTitle);
+        return cleanTitle;
+      }
+    }
+
+    console.warn('[Crawler] 제목을 찾지 못함, 사용한 선택자:', titleSelectors);
+    // 디버깅: 사용 가능한 모든 h1, h2, h3 태그 출력
+    console.log('[Crawler] 발견된 제목 태그들:');
+    $('h1, h2, h3').each((i, el) => {
+      console.log(`[Crawler] - ${$(el).get(0).tagName}: ${$(el).text().trim().substring(0, 50)}`);
+    });
+    return ''; // 제목을 찾지 못한 경우
+  }
+
+  /**
+   * 본문 추출
+   */
+  private extractContent($: cheerio.CheerioAPI): string {
+    // 네이버 블로그 본문 선택자 (다양한 구조 대응)
+    const contentSelectors = [
+      '.se-main-content',
+      '.se-content',
+      '.se-text-container',
+      'div.se_component',
+      '#postViewArea',
+      '.se-viewer',
+      '.se_paragraph',
+      '[data-module-type="t"]',
+      '.se-main-text',
+    ];
+
+    for (const selector of contentSelectors) {
+      const content = $(selector).first();
+      if (content.length > 0) {
+        const text = this.cleanText(content.text());
+        if (text.length > 50) { // 충분한 내용이 있는지 확인
+          console.log(`[Crawler] 본문 발견 (${selector}):`, text.length, '자');
+          console.log(`[Crawler] 본문 내용 (3000자):`, text.substring(0, 3000));
+          return text;
+        }
+      }
+    }
+
+    console.warn('[Crawler] 본문을 찾지 못함, 사용한 선택자:', contentSelectors);
+    return ''; // 본문을 찾지 못한 경우
+  }
+
+  /**
+   * 텍스트 정제
+   */
+  private cleanText(text: string): string {
+    return text
+      .replace(/\s+/g, ' ') // 여러 공백을 하나로
+      .replace(/\n+/g, '\n') // 여러 줄바꿈을 하나로
+      .trim();
+  }
+
+  /**
+   * 여러 블로그 글 가져오기
+   */
+  async fetchMultiplePosts(urls: string[]): Promise<BlogPost[]> {
+    const promises = urls.map(url => this.fetchBlogPost(url));
+    return Promise.all(promises);
+  }
+}
+
+// 싱글톤 인스턴스
+export const crawlerService = new CrawlerService();
