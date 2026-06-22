@@ -16,6 +16,7 @@ export interface BlogState {
   // 입력
   images: UploadedImage[];
   blogUrls: string[];
+  naverBlogId?: string;  // 네이버 블로그 ID (발행용)
 
   // 병렬 실행 결과
   photoAnalysis?: PhotoAnalysis;
@@ -29,8 +30,9 @@ export interface BlogState {
   finalPost?: string;
   imagePlacements?: ImagePlacement[];  // 이미지 배치 정보
 
-  // 네이버 업로드 결과
+  // 네이버 발행 결과
   uploadResult?: UploadResult;
+  publishedUrl?: string;  // 발행된 글 URL
 
   // 에러 처리
   error?: string;

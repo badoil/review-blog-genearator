@@ -1,6 +1,6 @@
 import { chromium, Browser, Page, BrowserContext } from 'playwright';
 import type { FinalPost, NaverCredentials, UploadResult } from '../types/blog';
-import * as fs from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import * as path from 'path';
 
 /**
@@ -64,14 +64,41 @@ export class NaverBlogService {
       throw new Error('페이지가 초기화되지 않았습니다.');
     }
 
-    // 네이버 메인 페이지로 리다이렉트되면 로그인 성공으로 간주
+    console.log('[Naver] 로그인 완료를 대기 중입니다...');
+
+    // 여러 가지 로그인 성공 신호를 감지
     try {
-      await this.page.waitForURL('**/naver.com', { timeout: 120000 });
-      console.log('로그인이 완료되었습니다.');
-    } catch {
-      // 타임아웃된 경우도 계속 진행
-      console.log('로그인 대기 시간이 초과되었습니다. 계속 진행합니다.');
+      // 방법 1: URL 변경 감지 (로그인 페이지에서 벗어나면 성공)
+      await this.page.waitForFunction(
+        () => {
+          const url = window.location.href;
+          // 로그인 페이지(nid.naver.com)가 아니면 로그인 성공으로 간주
+          return !url.includes('nid.naver.com/nidlogin.login');
+        },
+        { timeout: 120000 }
+      );
+      console.log('[Naver] URL 변경 감지 - 로그인 완료!');
+    } catch (e) {
+      console.log('[Naver] URL 감지 실패, 쿠키 확인으로 넘어갑니다...');
     }
+
+    // 방법 2: 쿠키 확인 (NID 세션 쿠키가 생성되었는지)
+    try {
+      await this.page.waitForFunction(
+        () => {
+          const cookies = document.cookie;
+          return cookies.includes('NID_SES') || cookies.includes('NID_AUT');
+        },
+        { timeout: 10000 }
+      );
+      console.log('[Naver] 세션 쿠키 확인 - 로그인 완료!');
+    } catch {
+      console.log('[Naver] 쿠키 감지 실패, 그래도 계속 진행합니다.');
+    }
+
+    // 추가 대기: 로그인 처리 완료를 위해
+    await this.page.waitForTimeout(2000);
+    console.log('[Naver] 로그인 처리가 완료되었습니다.');
   }
 
   /**
@@ -186,6 +213,7 @@ export class NaverBlogService {
    */
   async uploadPost(
     post: FinalPost,
+    userId: string,
     options?: { imagePaths?: string[] }
   ): Promise<UploadResult> {
     try {
@@ -195,95 +223,107 @@ export class NaverBlogService {
 
       console.log('[Naver] 블로그 글 발행 시작');
       console.log('[Naver] 제목:', post.title);
+      console.log('[Naver] 사용자 ID:', userId);
 
-      // 네이버 블로그 글쓰기 페이지로 이동
-      await this.page.goto('https://blog.naver.com/PostWrite.nhn', {
+      // 글쓰기 페이지로 바로 이동
+      const writeUrl = `https://blog.naver.com/${userId}?Redirect=Write`;
+      console.log('[Naver] 글쓰기 페이지로 이동:', writeUrl);
+      await this.page.goto(writeUrl, {
         waitUntil: 'networkidle',
       });
-
-      // 페이지가 로드될 때까지 대기
       await this.page.waitForLoadState('networkidle');
 
-      // 제목 입력
-      const titleSelector = '#title';
-      await this.page.waitForSelector(titleSelector, { timeout: 10000 });
-      await this.page.fill(titleSelector, post.title);
-      console.log('[Naver] 제목 입력 완료');
+      // 네이버 블로그 글쓰기 페이지는 iframe 구조
+      const frame = this.page.frame('mainFrame');
+      if (!frame) {
+        await this.page.screenshot({ path: 'debug-frame.png' });
+        console.error('[Naver] mainFrame iframe을 찾을 수 없습니다. 스크린샷: debug-frame.png');
+        throw new Error('글쓰기 iframe을 찾을 수 없습니다.');
+      }
+
+      console.log('[Naver] iframe 찾음, 제목 입력 시작');
+
+      // 제목 입력창 찾기 및 클릭
+      try {
+        // "제목" 텍스트 클릭하여 입력창 활성화
+        await frame.getByText('제목', { exact: true }).click();
+        await frame.waitForTimeout(500);
+
+        // 제목 입력
+        await frame.keyboard.type(post.title, { delay: 10 });
+        console.log('[Naver] 제목 입력 완료');
+      } catch (e) {
+        console.error('[Naver] 제목 입력 실패:', e);
+        await this.page.screenshot({ path: 'debug-title.png' });
+        throw new Error('제목 입력 실패: ' + (e instanceof Error ? e.message : '알 수 없는 오류'));
+      }
 
       // 이미지 업로드 (있는 경우)
       if (options?.imagePaths && options.imagePaths.length > 0) {
         await this.uploadImages(options.imagePaths);
       }
 
-      // 본문 입력
+      // 본문 입력 (iframe 내)
       console.log('[Naver] 본문 입력 시작');
-      const contentSelector = '.se-editable.se-content-text';
-
-      // 네이버 블로그 에디터는 iframe 안에 있는 경우가 많음
       try {
-        // 메인 프레임 확인
-        const frame = this.page.frame('mainFrame');
-        if (frame) {
-          console.log('[Naver] iframe 에디터 사용');
-          await frame.waitForSelector('body', { timeout: 10000 });
-          await frame.evaluate((content) => {
-            const body = frame?.document?.body;
-            if (body) {
-              body.innerHTML = content;
-            }
-          }, post.content);
-        } else {
-          // 일반적인 경우 - contenteditable 요소 찾기
-          console.log('[Naver] contenteditable 요소 찾기');
-          await this.page.waitForSelector('[contenteditable="true"]', { timeout: 10000 });
+        // "본문 추가" 텍스트를 가진 div 클릭
+        await frame.locator('div').filter({ hasText: /^본문 추가$/ }).click();
+        await frame.waitForTimeout(500);
 
-          // 첫 번째 contenteditable 요소에 본문 입력
-          const editor = await this.page.$('[contenteditable="true"]');
-          if (editor) {
-            await editor.click(); // 포커스
-            await this.page.keyboard.type(post.content, { delay: 10 });
-            console.log('[Naver] 본문 입력 완료');
-          }
-        }
-      } catch (e) {
-        console.log('[Naver] 본문 입력 실패, 대안 시도:', e);
-        // 대안: clipboard를 사용한 붙여넣기
-        await this.page.evaluate((content) => {
+        // 본문 입력 (클립보드 사용 - 더 안정적)
+        await frame.evaluate((content) => {
           navigator.clipboard.writeText(content);
         }, post.content);
+        await frame.keyboard.press(process.platform === 'darwin' ? 'Meta+V' : 'Ctrl+V');
+        await frame.waitForTimeout(1000);
 
-        await this.page.waitForSelector('[contenteditable="true"]', { timeout: 10000 });
-        const editor = await this.page.$('[contenteditable="true"]');
-        if (editor) {
-          await editor.click();
-          // Ctrl+V 또는 Cmd+V
-          await this.page.keyboard.press(process.platform === 'darwin' ? 'Meta+V' : 'Ctrl+V');
-          await this.page.waitForTimeout(1000);
-        }
+        console.log('[Naver] 본문 입력 완료');
+      } catch (e) {
+        console.log('[Naver] 본문 입력 실패:', e);
+        await this.page.screenshot({ path: 'debug-content.png' });
+        throw new Error('본문 입력 실패: ' + (e instanceof Error ? e.message : '알 수 없는 오류'));
       }
 
-      // 태그 입력
+      // 태그 입력 (iframe 내)
       if (post.tags && post.tags.length > 0) {
         console.log('[Naver] 태그 입력 시작');
-        const tagSelector = '.tag_input';
         try {
-          await this.page.waitForSelector(tagSelector, { timeout: 5000 });
+          // 태그 입력창 찾기
+          const tagInput = frame.locator('input[placeholder*="태그"], input.tag_input, .tag_input').first();
+          await tagInput.click();
+
           for (const tag of post.tags) {
-            await this.page.fill(tagSelector, tag);
-            await this.page.keyboard.press('Enter');
-            await this.page.waitForTimeout(500); // 태그가 추가될 때까지 대기
+            await tagInput.fill(tag);
+            await frame.keyboard.press('Enter');
+            await frame.waitForTimeout(500);
           }
           console.log('[Naver] 태그 입력 완료');
-        } catch {
-          console.log('[Naver] 태그 입력을 건너뜁니다.');
+        } catch (e) {
+          console.log('[Naver] 태그 입력 실패, 건너뜀:', e);
         }
       }
 
-      // 발행 버튼 클릭
+      // 발행 버튼 클릭 (iframe 내 또는 메인 페이지)
       console.log('[Naver] 발행 버튼 클릭');
-      const publishSelector = '.btn_publish';
-      await this.page.waitForSelector(publishSelector, { timeout: 10000 });
-      await this.page.click(publishSelector);
+      try {
+        // 먼저 iframe 내에서 시도
+        const publishButton = frame.getByText('발행', { exact: true }).or(
+          frame.getByText('등록', { exact: true })
+        ).or(
+          frame.getByText('글쓰기', { exact: true })
+        );
+
+        await publishButton.click();
+        console.log('[Naver] 발행 버튼 클릭 완료 (iframe)');
+      } catch (e) {
+        console.log('[Naver] iframe에서 발행 버튼 찾기 실패, 메인 페이지에서 시도:', e);
+        // 메인 페이지에서 시도
+        const mainButton = this.page.getByText('발행', { exact: true }).or(
+          this.page.getByText('등록', { exact: true })
+        );
+        await mainButton.click();
+        console.log('[Naver] 발행 버튼 클릭 완료 (메인)');
+      }
 
       // 발행 완료 대기
       await this.page.waitForURL('**/PostView.nhn**', { timeout: 30000 });

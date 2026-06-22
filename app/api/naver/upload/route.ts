@@ -15,6 +15,7 @@ const SESSION_PATH = path.join(process.cwd(), 'naver-session.json');
  *
  * FormData:
  * - post: string (생성된 블로그 글)
+ * - naverBlogId: string (네이버 블로그 ID)
  * - images: File[] (업로드할 이미지들, optional)
  *
  * 저장된 세션이 있으면 자동으로 사용하고,
@@ -24,9 +25,14 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const post = formData.get('post') as string;
+    const naverBlogId = formData.get('naverBlogId') as string;
 
     if (!post) {
       return NextResponse.json({ error: '블로그 글이 없습니다.' }, { status: 400 });
+    }
+
+    if (!naverBlogId) {
+      return NextResponse.json({ error: '네이버 블로그 ID가 필요합니다.' }, { status: 400 });
     }
 
     // 세션 파일 존재 확인
@@ -47,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     // uploads 디렉토리 생성
     if (!existsSync(uploadsDir)) {
-      await fs.promises.mkdir(uploadsDir, { recursive: true });
+      await fs.mkdir(uploadsDir, { recursive: true });
     }
 
     // 이미지 처리
@@ -58,7 +64,7 @@ export async function POST(request: NextRequest) {
 
         // 파일 저장
         const buffer = Buffer.from(await value.arrayBuffer());
-        await fs.promises.writeFile(filePath, buffer);
+        await fs.writeFile(filePath, buffer);
 
         imagePaths.push(filePath);
         console.log('[Naver Upload] 이미지 저장:', filePath);
@@ -75,20 +81,21 @@ export async function POST(request: NextRequest) {
     // 글 파싱 (제목, 본문, 태그 추출)
     const { title, content, tags } = parseBlogPost(post);
 
-    // 업로드 (이미지 포함)
+    // 업로드 (userId, 이미지 포함)
     const uploadResult = await naverService.uploadPost(
       {
         title,
         content,
         tags,
       },
+      naverBlogId,
       { imagePaths }
     );
 
     // 업로드 후 임시 파일 삭제
     for (const imagePath of imagePaths) {
       try {
-        await fs.promises.unlink(imagePath);
+        await fs.unlink(imagePath);
         console.log('[Naver Upload] 임시 파일 삭제:', imagePath);
       } catch (e) {
         console.log('[Naver Upload] 파일 삭제 실패:', imagePath, e);

@@ -13,39 +13,24 @@ Photo-to-Naver Blog Agent
 * 사진 분석
 * 기존 블로그 스타일 분석
 * 블로그 글 생성
+* 이미지 배치
 * 네이버 블로그 업로드
 
-초기 버전은 SaaS가 아닌 로컬 실행 환경을 목표로 한다.
+---
+
+## 기능
+
+- 📸 **사진 분석**: Gemini 2.5 Flash로 업로드된 사진 분석 (장소, 활동, 음식, 분위기, 타임라인)
+- 📝 **스타일 분석**: 네이버 블로그 크롤링으로 기존 글쓰기 스타일 분석
+- ✍️ **글 생성**: LangGraphJS로 사진 + 스타일 반영한 블로그 글 생성
+- 🖼️ **이미지 배치**: 생성된 글에 적절한 위치에 이미지 배치
+- 🚀 **자동 발행**: Playwright로 네이버 블로그에 자동 업로드
 
 ---
 
-# MVP 목표
+## 사용자 시나리오
 
-최종 목표는 네이버 블로그 자동 업로드지만, 첫 번째 목표는 아래 기능을 성공시키는 것이다.
-
-```text
-사진 업로드
-
-+
-
-기존 블로그 글 분석
-
-↓
-
-사용자 스타일 반영
-
-↓
-
-블로그 글 생성
-```
-
-업로드 기능은 이후 단계에서 추가한다.
-
----
-
-# 사용자 시나리오
-
-## 여행 후기 작성
+### 여행 후기 작성
 
 사용자
 
@@ -64,11 +49,19 @@ Photo-to-Naver Blog Agent
 
 ↓
 
-사용자 블로그 스타일 분석
+사용자 블로그 스타일 분석 (URL 2개)
 
 ↓
 
 블로그 글 생성
+
+↓
+
+이미지 배치
+
+↓
+
+네이버 블로그 발행
 ```
 
 결과
@@ -78,12 +71,14 @@ Photo-to-Naver Blog Agent
 
 본문
 
+이미지 배치
+
 태그
 ```
 
 ---
 
-## 맛집 후기 작성
+### 맛집 후기 작성
 
 사용자
 
@@ -107,80 +102,57 @@ Photo-to-Naver Blog Agent
 
 ---
 
-# 기술 스택
+## 기술 스택
 
-## Frontend
+### Frontend + Backend
 
-* Next.js
+* Next.js (App Router + API Routes)
 * React
 * TypeScript
 * Tailwind CSS
 
-## Backend
-
-* NestJS
-* TypeScript
-
-## Agent Framework
+### Agent Framework
 
 * LangGraphJS
 * LangChain
 
-## LLM
+### LLM
 
-* GLM-4.5
-* GLM-4.5V
+* GLM-5.1 (텍스트: 스타일 분석, 글 생성, 글 검토)
+* Gemini 2.5 Flash (비전: 이미지 분석)
 
-## LLM Gateway
+### Automation
 
-* LiteLLM
+* Playwright (네이버 블로그 업로드)
+
+### Crawling
+
+* Cheerio (네이버 블로그 HTML 파싱)
 
 구조
 
 ```text
 LangGraph
     ↓
-LiteLLM
+GLM (Text) / Gemini (Vision)
     ↓
-GLM API
+Playwright (Naver Upload)
 ```
 
 ---
 
-# 제외 범위
-
-MVP에서는 아래 항목을 사용하지 않는다.
-
-* PostgreSQL
-* Redis
-* BullMQ
-* S3
-* LangSmith
-* Docker
-* Kubernetes
-* Cloud 배포
-
-모든 기능은 로컬 환경에서 실행한다.
-
----
-
-# 시스템 아키텍처
+## 시스템 아키텍처
 
 ```text
 ┌────────────────────┐
 │      Next.js       │
+│   (Single Page)    │
 └─────────┬──────────┘
           │
           ▼
 
 ┌────────────────────┐
-│      NestJS        │
-└─────────┬──────────┘
-          │
-          ▼
-
-┌────────────────────┐
-│    LangGraphJS     │
+│   LangGraphJS      │
 └─────────┬──────────┘
           │
 
@@ -189,14 +161,16 @@ MVP에서는 아래 항목을 사용하지 않는다.
  ▼                 ▼
 
 Photo Agent    Style Agent
+(Gemini)        (GLM + Crawling)
 
         ▼
 
-      Writer
+      Writer (GLM)
+      (이미지 배치 포함)
 
         ▼
 
-     Reviewer
+     Reviewer (GLM)
 
         ▼
 
@@ -205,9 +179,9 @@ Photo Agent    Style Agent
 
 ---
 
-# Agent 설계
+## Agent 설계
 
-## 1. Photo Analyzer Agent
+### 1. Photo Analyzer Agent
 
 ### 역할
 
@@ -223,6 +197,15 @@ images[]
 
 ```json
 {
+  "images": [{
+    "index": 0,
+    "description": "...",
+    "places": [],
+    "activities": [],
+    "foods": [],
+    "time": "...",
+    "location": "..."
+  }],
   "places": [],
   "activities": [],
   "foods": [],
@@ -238,22 +221,25 @@ images[]
   "places": ["협재해수욕장"],
   "activities": ["서핑"],
   "foods": ["흑돼지"],
-  "mood": "여유로움"
+  "mood": "여유로움",
+  "timeline": [
+    {"time": "아침", "location": "협재해수욕장", "activity": "서핑"}
+  ]
 }
 ```
 
 ---
 
-## 2. Style Analyzer Agent
+### 2. Style Analyzer Agent
 
 ### 역할
 
-사용자의 기존 블로그 글을 분석한다.
+사용자의 기존 네이버 블로그 글을 크롤링하여 분석한다.
 
 ### 입력
 
 ```ts
-blogPosts[]
+blogUrls[]  // 네이버 블로그 URL 2개
 ```
 
 ### 출력
@@ -263,8 +249,11 @@ blogPosts[]
   "tone": "",
   "endingPattern": "",
   "emojiLevel": 0,
-  "paragraphLength": "",
-  "writingStyle": ""
+  "paragraphLength": "short",
+  "writingStyle": "",
+  "commonPhrases": [],
+  "sentenceStyle": "",
+  "punctuation": ""
 }
 ```
 
@@ -275,13 +264,14 @@ blogPosts[]
   "tone": "친근함",
   "endingPattern": "~했어요",
   "emojiLevel": 2,
-  "paragraphLength": "short"
+  "paragraphLength": "short",
+  "commonPhrases": ["완전 추천", "대박"]
 }
 ```
 
 ---
 
-## 3. Writer Agent
+### 3. Writer Agent
 
 ### 역할
 
@@ -300,6 +290,7 @@ blogPosts[]
 
 ```text
 블로그 초안
+이미지 배치 정보
 ```
 
 ### 생성 항목
@@ -309,10 +300,11 @@ blogPosts[]
 * 본문
 * 마무리
 * 태그
+* 이미지 배치 위치
 
 ---
 
-## 4. Reviewer Agent
+### 4. Reviewer Agent
 
 ### 역할
 
@@ -333,142 +325,206 @@ blogPosts[]
 
 ---
 
-# LangGraph State
+## LangGraph State
 
 ```ts
 export interface BlogState {
+  // 입력
   images: UploadedImage[];
+  blogUrls: string[];
 
-  blogPosts: string[];
-
+  // 병렬 실행 결과
   photoAnalysis?: PhotoAnalysis;
-
   styleProfile?: StyleProfile;
 
-  draft?: string;
+  // 참고 블로그 내용 (리뷰어에서 비교용)
+  referencePosts?: string;
 
-  finalDraft?: string;
+  // 순차 실행 결과
+  draft?: string;
+  finalPost?: string;
+  imagePlacements?: ImagePlacement[];
+
+  // 네이버 업로드 결과
+  uploadResult?: UploadResult;
+
+  // 에러 처리
+  error?: string;
 }
 ```
 
 ---
 
-# 타입 정의
+## 타입 정의
 
-## PhotoAnalysis
+### PhotoAnalysis
 
 ```ts
 export interface PhotoAnalysis {
+  images: ImageAnalysis[];
   places: string[];
-
   activities: string[];
-
   foods: string[];
-
   mood: string;
-
   timeline: TimelineItem[];
+}
+
+export interface ImageAnalysis {
+  index: number;
+  description: string;
+  places: string[];
+  activities: string[];
+  foods: string[];
+  time?: string;
+  location?: string;
+}
+
+export interface TimelineItem {
+  time?: string;
+  location?: string;
+  activity?: string;
 }
 ```
 
-## StyleProfile
+### StyleProfile
 
 ```ts
 export interface StyleProfile {
   tone: string;
-
   endingPattern: string;
-
   emojiLevel: number;
-
-  paragraphLength: string;
-
+  paragraphLength: 'short' | 'medium' | 'long';
   writingStyle: string;
+  commonPhrases?: string[];
+  sentenceStyle?: string;
+  punctuation?: string;
+}
+```
+
+### ImagePlacement
+
+```ts
+export interface ImagePlacement {
+  imageIndex: number;
+  position: 'before' | 'after' | 'replace';
+  targetText?: string;
+  insertIndex?: number;
 }
 ```
 
 ---
 
-# 프로젝트 구조
+## 프로젝트 구조
 
 ```text
-src
+src/
 
-├── blog-agent
+├── app/
+│   ├── page.tsx              # 메인 페이지 (단일 페이지 UI)
+│   ├── layout.tsx
+│   ├── globals.css
+│   └── api/
+│       ├── generate/route.ts # 블로그 생성 API
+│       └── naver/
+│           ├── login/route.ts
+│           ├── logout/route.ts
+│           ├── status/route.ts
+│           └── upload/route.ts
 │
-├── graph
-│   ├── state.ts
-│   ├── graph.ts
-│   └── nodes
-│       ├── photo-agent.ts
-│       ├── style-agent.ts
-│       ├── writer-agent.ts
-│       └── reviewer-agent.ts
+├── lib/
+│   ├── agent/
+│   │   ├── graph.ts
+│   │   ├── state.ts
+│   │   └── nodes/
+│   │       ├── photo-agent.ts
+│   │       ├── style-agent.ts
+│   │       ├── writer-agent.ts
+│   │       └── reviewer-agent.ts
+│   │
+│   ├── services/
+│   │   ├── glm.service.ts
+│   │   ├── gemini.service.ts
+│   │   ├── crawler.service.ts
+│   │   └── naver.service.ts
+│   │
+│   └── types/
+│       ├── photo.ts
+│       ├── style.ts
+│       └── blog.ts
 │
-├── services
-│   ├── glm.service.ts
-│   ├── vision.service.ts
-│   └── blog-style.service.ts
-│
-├── controllers
-│   └── blog-agent.controller.ts
-│
-└── app.module.ts
+├── public/
+├── naver-session.json
+└── package.json
 ```
 
 ---
 
-# 개발 단계
+## 개발 단계
 
-## Phase 1 - GLM Vision 연동
-
-목표
-
-```text
-사진 업로드
-
-↓
-
-사진 분석 결과 출력
-```
-
-산출물
-
-* 이미지 업로드 API
-* GLM-4.5V 연동
-* 분석 결과 JSON 출력
-
----
-
-## Phase 2 - 블로그 스타일 분석
+### Phase 1 - 기본 프로젝트 설정 ✅
 
 목표
 
 ```text
-블로그 글 20개 입력
-
-↓
-
-스타일 프로필 생성
+Next.js 프로젝트 생성
 ```
 
 산출물
 
-* 스타일 분석 프롬프트
-* StyleProfile 생성
+* ✅ Next.js 프로젝트 구조
+* ✅ TypeScript 설정
+* ✅ Tailwind CSS 설정
 
 ---
 
-## Phase 3 - LangGraph 구축
+### Phase 2 - 네이버 블로그 크롤링 ✅
 
 목표
 
 ```text
-Photo Agent
+블로그 URL 2개 입력
 
 ↓
 
-Style Agent
+글 내용 추출
+```
+
+산출물
+
+* ✅ crawler.service.ts (Cheerio)
+* ✅ 네이버 블로그 HTML 파싱
+* ✅ 텍스트 클린징
+
+---
+
+### Phase 3 - LLM 서비스 & LangGraph 노드 ✅
+
+목표
+
+```text
+LLM 호출 구현
+에이전트 노드 구현
+```
+
+산출물
+
+* ✅ glm.service.ts (GLM-5.1)
+* ✅ gemini.service.ts (Gemini 2.5 Flash)
+* ✅ photo-agent.ts
+* ✅ style-agent.ts
+* ✅ writer-agent.ts
+* ✅ reviewer-agent.ts
+
+---
+
+### Phase 4 - LangGraph 구축 ✅
+
+목표
+
+```text
+Photo Agent (병렬)
+
+Style Agent (병렬)
 
 ↓
 
@@ -479,38 +535,16 @@ Writer Agent
 Reviewer Agent
 ```
 
-전체 플로우 동작
-
 산출물
 
-* graph.ts
-* state.ts
-* 노드 구현
+* ✅ graph.ts (Promise.all 병렬 실행)
+* ✅ state.ts
 
 ---
 
-## Phase 4 - Next.js UI
+### Phase 5 - 네이버 블로그 업로드 ✅
 
-기능
-
-* 사진 업로드
-* 블로그 글 입력
-* 생성 결과 확인
-
-산출물
-
-* 업로드 페이지
-* 결과 페이지
-
----
-
-## Phase 5 - 네이버 블로그 자동 업로드
-
-기술
-
-* Playwright
-
-기능
+목표
 
 ```text
 로그인
@@ -521,17 +555,35 @@ Reviewer Agent
 
 ↓
 
+이미지 업로드
+
+↓
+
 발행
 ```
 
 산출물
 
-* 네이버 로그인 자동화
-* 글 발행 자동화
+* ✅ naver.service.ts (Playwright)
+* ✅ 세션 관리 (naver-session.json)
+* ✅ 이미지 업로드
 
 ---
 
-# 성공 기준
+### Phase 6 - UI 구현 ✅
+
+산출물
+
+* ✅ app/page.tsx (단일 페이지)
+* ✅ 블로그 URL 입력
+* ✅ 이미지 업로드
+* ✅ 생성 결과 표시
+* ✅ 네이버 발행 버튼
+* ✅ 로그인/로그아웃
+
+---
+
+## 성공 기준
 
 사용자가
 
@@ -542,7 +594,7 @@ Reviewer Agent
 하고
 
 ```text
-기존 블로그 글 20개 제공
+네이버 블로그 URL 2개 제공
 ```
 
 했을 때
@@ -551,7 +603,9 @@ Reviewer Agent
 
 * 제목 생성
 * 본문 생성
+* 이미지 배치
 * 태그 생성
+* 네이버 블로그 발행
 
 이 완료되고,
 
@@ -559,7 +613,7 @@ Reviewer Agent
 
 ---
 
-# 향후 확장 계획
+## 향후 확장 계획
 
 ## V2
 
@@ -569,8 +623,8 @@ Reviewer Agent
 
 ## V3
 
-* 네이버 블로그 자동 발행
 * 예약 발행
+* 다중 이미지 배치 옵션
 
 ## V4
 
@@ -585,6 +639,3 @@ Reviewer Agent
 * SEO 최적화
 * 썸네일 자동 생성
 * SNS 동시 발행
-
-```
-```

@@ -35,6 +35,14 @@ yarn-error.log*
 
 # naver session file
 naver-session.json
+naver-user.json
+
+# saved posts and images
+saved-posts/
+saved-images/
+
+# debug screenshots
+debug-*.png
 
 # vercel
 .vercel

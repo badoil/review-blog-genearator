@@ -1,15 +1,18 @@
-import { StateGraph, END } from '@langchain/langgraph';
+import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
 import type { BlogState } from './state';
 import { photoNode } from './nodes/photo-agent';
 import { styleNode } from './nodes/style-agent';
 import { writerNode } from './nodes/writer-agent';
 import { reviewerNode } from './nodes/reviewer-agent';
+import { publisherNode } from './nodes/publisher-agent';
+import type { UploadedImage } from '../types/photo';
+
 
 /**
  * Blog 생성을 위한 LangGraph 정의
  *
  * 아키텍처:
- *   (Photo + Style 병렬 실행) → Writer → Reviewer → END
+ *   (Photo + Style 병렬 실행) → Writer → Reviewer → Publisher → END
  *
  * Photo Agent와 Style Agent는 병렬로 실행됩니다.
  */
@@ -20,79 +23,93 @@ export const NODES = {
   STYLE: 'style',
   WRITER: 'writer',
   REVIEWER: 'reviewer',
+  PUBLISHER: 'publisher',
 } as const;
 
 /**
- * Blog 생성 그래프 생성
- * Writer와 Reviewer만 포함합니다.
- * Photo와 Style는 병렬로 실행됩니다.
+ * State Annotation 정의
+ * LangGraph 최신 버전에서 Annotation 방식 사용
  */
-export function createBlogGraph(): StateGraph<BlogState> {
-  // StateGraph 정의
-  const graph = new StateGraph<BlogState>({
-    channels: {
-      // 입력
-      images: {
-        default: () => [],
-        reducer: (x, y) => y ?? x,
-      },
-      blogUrls: {
-        default: () => [],
-        reducer: (x, y) => y ?? x,
-      },
-      // 병렬 실행 결과
-      photoAnalysis: {
-        default: () => undefined,
-        reducer: (x, y) => y ?? x,
-      },
-      styleProfile: {
-        default: () => undefined,
-        reducer: (x, y) => y ?? x,
-      },
-      // 참고 블로그 내용
-      referencePosts: {
-        default: () => undefined,
-        reducer: (x, y) => y ?? x,
-      },
-      // 순차 실행 결과
-      draft: {
-        default: () => undefined,
-        reducer: (x, y) => y ?? x,
-      },
-      finalPost: {
-        default: () => undefined,
-        reducer: (x, y) => y ?? x,
-      },
-      imagePlacements: {
-        default: () => undefined,
-        reducer: (x, y) => y ?? x,
-      },
-      // 네이버 업로드 결과
-      uploadResult: {
-        default: () => undefined,
-        reducer: (x, y) => y ?? x,
-      },
-      // 에러 처리
-      error: {
-        default: () => undefined,
-        reducer: (x, y) => y ?? x,
-      },
-    },
-  });
+const StateAnnotation = Annotation.Root({
+  // 입력
+  images: Annotation<any[]>({
+    default: () => [],
+    reducer: (x, y) => y ?? x,
+  }),
+  blogUrls: Annotation<string[]>({
+    default: () => [],
+    reducer: (x, y) => y ?? x,
+  }),
+  naverBlogId: Annotation<string | undefined>({
+    default: () => undefined,
+    reducer: (x, y) => y ?? x,
+  }),
+  // 병렬 실행 결과
+  photoAnalysis: Annotation<any>({
+    default: () => undefined,
+    reducer: (x, y) => y ?? x,
+  }),
+  styleProfile: Annotation<any>({
+    default: () => undefined,
+    reducer: (x, y) => y ?? x,
+  }),
+  // 참고 블로그 내용
+  referencePosts: Annotation<string | undefined>({
+    default: () => undefined,
+    reducer: (x, y) => y ?? x,
+  }),
+  // 순차 실행 결과
+  draft: Annotation<string | undefined>({
+    default: () => undefined,
+    reducer: (x, y) => y ?? x,
+  }),
+  finalPost: Annotation<string | undefined>({
+    default: () => undefined,
+    reducer: (x, y) => y ?? x,
+  }),
+  imagePlacements: Annotation<any[] | undefined>({
+    default: () => undefined,
+    reducer: (x, y) => y ?? x,
+  }),
+  // 네이버 발행 결과
+  uploadResult: Annotation<any | undefined>({
+    default: () => undefined,
+    reducer: (x, y) => y ?? x,
+  }),
+  publishedUrl: Annotation<string | undefined>({
+    default: () => undefined,
+    reducer: (x, y) => y ?? x,
+  }),
+  // 에러 처리
+  error: Annotation<string | undefined>({
+    default: () => undefined,
+    reducer: (x, y) => y ?? x,
+  }),
+});
 
-  // 노드 추가 (Writer와 Reviewer만)
-  graph.addNode(NODES.WRITER, writerNode);
-  graph.addNode(NODES.REVIEWER, reviewerNode);
+/**
+ * Blog 생성 그래프 생성
+ */
+export function createBlogGraph() {
+  // StateGraph 정의 (새로운 API)
+  // const graph = new StateGraph(StateAnnotation);
+
+  // // 노드 추가
+  // graph.addNode('writer', writerNode);
+  // graph.addNode('reviewer', reviewerNode);
+  // graph.addNode('publisher', publisherNode);
+  const graph = new StateGraph(StateAnnotation)
+  .addNode('writer', writerNode)
+  .addNode('reviewer', reviewerNode)
+  .addNode('publisher', publisherNode);
+
 
   // 엣지 추가
-  // Writer가 완료되면 Reviewer로
-  graph.addEdge(NODES.WRITER, NODES.REVIEWER);
-
-  // Reviewer가 완료되면 END
-  graph.addEdge(NODES.REVIEWER, END);
-
-  // 시작점 설정
-  graph.setEntryPoint(NODES.WRITER);
+ graph.addEdge(START, 'writer');
+ graph.addEdge('writer', 'reviewer');
+ graph.addEdge('reviewer', 'publisher');
+ graph.addEdge('publisher', END);
+ 
 
   // 그래프 컴파일
   return graph.compile();
@@ -104,12 +121,19 @@ export function createBlogGraph(): StateGraph<BlogState> {
  */
 export async function generateBlogPost(
   images: Array<{ path: string; base64?: string }>,
-  blogUrls: string[]
+  blogUrls: string[],
+  naverBlogId?: string
 ): Promise<BlogState> {
+  const uploadedImages: UploadedImage[] = images.map(img => ({
+  path: img.path,
+  filename: img.path.split('/').pop() || 'image.jpg',
+  base64: img.base64,
+}));
   // 초기 상태
   let state: BlogState = {
-    images,
+    images: uploadedImages,
     blogUrls,
+    naverBlogId,
   };
 
   // Photo와 Style 병렬 실행
@@ -130,9 +154,9 @@ export async function generateBlogPost(
     return state;
   }
 
-  // 그래프 실행 (Writer → Reviewer)
+  // 그래프 실행 (Writer → Reviewer → Publisher)
   const graph = createBlogGraph();
   const result = await graph.invoke(state);
 
-  return result;
+  return result as BlogState;
 }
