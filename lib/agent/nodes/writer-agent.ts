@@ -139,13 +139,13 @@ ${referencePosts ? `
    - 내용만 새로운 사진 정보로, 구조/형식은 참고 블로그 그대로
 ` : ''}
 
-${styleProfile.imageTextLength ? `
-## 이미지별 텍스트 길이 (따라야 할 길이)
-- 평균: ${styleProfile.imageTextLength.average}문장/이미지
-- 범위: ${styleProfile.imageTextLength.min}-${styleProfile.imageTextLength.max}문장
-- 각 이미지: ${styleProfile.imageTextLength.perImage.join(', ')}문장
+${styleProfile.sectionTextLength ? `
+## 섹션별 텍스트 길이 (따라야 할 길이)
+- 평균: ${styleProfile.sectionTextLength.average}문장/섹션
+- 범위: ${styleProfile.sectionTextLength.min}-${styleProfile.sectionTextLength.max}문장
+- 각 섹션: ${styleProfile.sectionTextLength.perSection.join(', ')}문장
 
-**중요: 각 이미지에 대해 위 길이만큼만 작성하세요. 너무 길지 않게!**
+**중요: 각 섹션을 위 길이만큼만 작성하세요. 너무 길지 않게!**
 ` : ''}
 
 ${images && images.length > 0 ? `

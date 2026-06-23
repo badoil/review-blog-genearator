@@ -11,12 +11,12 @@ export interface StyleProfile {
   sentenceStyle?: string;        // 문장 스타일
   punctuation?: string;          // 문장 부호 사용 습관
 
-  // 이미지별 텍스트 길이 분석
-  imageTextLength?: {
-    perImage: number[];      // 각 이미지별 텍스트 길이 (문장 수)
-    average: number;         // 평균 텍스트 길이
-    min: number;             // 최소 길이
-    max: number;             // 최대 길이
+  // 섹션별 텍스트 길이 분석
+  sectionTextLength?: {
+    perSection: number[];      // 각 섹션별 텍스트 길이 (문장 수)
+    average: number;           // 평균 텍스트 길이
+    min: number;               // 최소 길이
+    max: number;               // 최대 길이
   };
 }
 

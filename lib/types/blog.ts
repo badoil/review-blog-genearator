@@ -1,8 +1,6 @@
 // 블로그 글 타입
-export interface ImageTextPair {
-  imageUrl: string;      // 이미지 URL
-  altText: string;       // 이미지 대체 텍스트
-  textAfter: string;     // 이미지 다음에 오는 텍스트 (문장 수로 환산 가능)
+export interface SectionText {
+  text: string;      // 섹션의 텍스트 (이미지를 구분선으로 추출)
 }
 
 export interface BlogPost {
@@ -11,7 +9,7 @@ export interface BlogPost {
   url: string;
   author?: string;
   date?: string;
-  imageTextPairs?: ImageTextPair[];  // 이미지-텍스트 쌍
+  sectionTexts?: SectionText[];  // 섹션 단위 텍스트 배열
 }
 
 // 최종 블로그 글
