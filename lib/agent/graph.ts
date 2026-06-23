@@ -101,14 +101,23 @@ export function createBlogGraph() {
   const graph = new StateGraph(StateAnnotation)
   .addNode('writer', writerNode)
   .addNode('reviewer', reviewerNode)
-  .addNode('publisher', publisherNode);
+  // .addNode('publisher', publisherNode);
 
 
   // 엣지 추가
  graph.addEdge(START, 'writer');
  graph.addEdge('writer', 'reviewer');
- graph.addEdge('reviewer', 'publisher');
- graph.addEdge('publisher', END);
+
+ // Reviewer → Publisher 또는 END (naverBlogId 유무에 따라)
+//  graph.addConditionalEdges('reviewer', {
+//    publish: 'publisher',
+//    end: END,
+//  }, {
+//    publish: (state: any) => state.naverBlogId ? 'publish' : 'end',
+//    end: () => 'end',
+//  });
+
+ graph.addEdge('reviewer', END);
  
 
   // 그래프 컴파일

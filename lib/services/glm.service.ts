@@ -105,18 +105,25 @@ export class GLMService {
 
       const data = await response.json();
 
-      console.log('[GLM] API 응답 성공:', {
-        model: data.model,
-        choices: data.choices?.length,
-        contentLength: data.choices?.[0]?.message?.content?.length,
-        usage: data.usage,
+      console.log('[GLM] API 응답 원본 (첫 500자):', JSON.stringify(data).substring(0, 500));
+      console.log('[GLM] API 응답 구조:', {
+        hasChoices: !!data.choices,
+        choicesLength: data.choices?.length,
+        hasMessage: !!data.choices?.[0]?.message,
+        hasContent: !!data.choices?.[0]?.message?.content,
       });
 
       const content = data.choices?.[0]?.message?.content;
       if (!content) {
-        console.error('[GLM] 응답 content가 없음:', JSON.stringify(data, null, 2));
+        console.error('[GLM] 응답 content가 없음. 전체 응답:', JSON.stringify(data, null, 2));
         throw new Error('GLM API 응답에 content가 없습니다.');
       }
+
+      console.log('[GLM] API 응답 성공:', {
+        model: data.model,
+        contentLength: content.length,
+        usage: data.usage,
+      });
 
       return {
         content,

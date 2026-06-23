@@ -27,16 +27,28 @@ export async function styleNode(state: BlogState): Promise<Partial<BlogState>> {
     console.log('[Style Agent] 크롤링 완료, 글 개수:', blogPosts.length);
     blogPosts.forEach((post, i) => {
       console.log(`[Style Agent] 글 ${i + 1}: "${post.title}" (${post.content.length}자)`);
-      console.log(`[Style Agent] 내용 미리보기: "${post.content.substring(0, 100)}..."`);
+      console.log(`[Style Agent] 이미지-텍스트 쌍 개수:`, post.imageTextPairs?.length || 0);
     });
 
     // 블로그 글들을 하나의 텍스트로 합치기
-    const blogTexts = blogPosts.map((post, i) => `
-=== 글 ${i + 1} ===
+    const blogTexts = blogPosts.map((post, i) => {
+      let text = `=== 글 ${i + 1} ===
 제목: ${post.title}
 본문:
 ${post.content}
-`).join('\n');
+`;
+
+      // 이미지-텍스트 쌍 정보 추가
+      if (post.imageTextPairs && post.imageTextPairs.length > 0) {
+        text += `\n이미지-텍스트 쌍:\n`;
+        post.imageTextPairs.forEach((pair, idx) => {
+          const sentenceCount = pair.textAfter ? pair.textAfter.split(/[.!?]/).filter(s => s.trim().length > 0).length : 0;
+          text += `- 이미지${idx + 1}: ${sentenceCount}문장 (${pair.textAfter?.substring(0, 50)}...)\n`;
+        });
+      }
+
+      return text;
+    }).join('\n');
 
     // 시스템 프롬프트 (개선됨)
     const systemPrompt = `당신은 블로그 글쓰기 스타일 분석 전문가입니다.
@@ -52,7 +64,13 @@ ${post.content}
   "writingStyle": "특징적인 글쓰기 스타일 설명 (예: 짧은 문장 위주, 감성적인 표현, 정보 전달 중심 등)",
   "commonPhrases": ["자주 사용하는 표현1", "표현2", "표현3"],
   "sentenceStyle": "문장 스타일 (예: 단문 위주, 긴 문장 혼용 등)",
-  "punctuation": "문장 부호 사용 습관 (실제 사용 빈도 기반)"
+  "punctuation": "문장 부호 사용 습관 (실제 사용 빈도 기반)",
+  "imageTextLength": {
+    "perImage": [이미지1별 문장수, 이미지2별 문장수, ...],
+    "average": 평균 문장 수,
+    "min": 최소 문장 수,
+    "max": 최대 문장 수
+  }
 }
 
 분석 가이드:
@@ -63,7 +81,10 @@ ${post.content}
 - writingStyle: 구체적인 글쓰기 특징을 실제 내용에서 발견된 것만 작성
 - commonPhrases: 반복해서 사용하는 표현을 실제로 찾아서 3-5개 추출 (없으면 빈 배열)
 - sentenceStyle: 문장이 긴지 짧은지 실제로 측정
-- punctuation: 느낌표(!), 줄임표(...), 물음표(?) 등의 실제 사용 횟수를 세어서 기술 (없으면 "사용하지 않음"이라고 작성)`;
+- punctuation: 느낌표(!), 줄임표(...), 물음표(?) 등의 실제 사용 횟수를 세어서 기술 (없으면 "사용하지 않음"이라고 작성)
+- imageTextLength: **중요** "이미지-텍스트 쌍" 섹션을 확인하여 각 이미지 다음에 오는 텍스트의 문장 수를 실제로 세어서 기록하세요.
+  - 예시: 이미지-텍스트 쌍에 "이미지1: 3문장"이라고 되어 있으면 perImage 배열에 [3]을 넣으세요.
+  - 이미지가 없으면 imageTextLength 필드를 완전히 제외하세요 (null 또는 undefined).`;
 
     const userPrompt = `다음 블로그 글들의 글쓰기 스타일을 **실제 내용을 기반으로 통계적으로 분석**해주세요:
 
@@ -73,13 +94,22 @@ ${blogTexts}
 1. 실제 글에 나타나는 내용만 분석하세요
 2. 문장 부호 사용은 실제 개수를 세어서 정확하게 작성하세요
 3. 이모지 사용도 실제 개수를 확인하세요
-4. 글에 없는 패턴은 "사용하지 않음" 또는 빈 배열로 표시하세요`;
+4. **이미지별 텍스트 길이** - 위 "이미지-텍스트 쌍" 섹션에 있는 내용을 그대로 사용하세요. 없으면 imageTextLength 필드를 포함하지 마세요.
+5. 글에 없는 패턴은 "사용하지 않음" 또는 빈 배열로 표시하세요
+
+**중요: imageTextLength는 위 "이미지-텍스트 쌍" 섹션에 있는 내용만 사용하세요. 이미지가 전혀 없으면 이 필드를 아예 만들지 마세요.**`;
 
     console.log('[Style Agent] 스타일 분석 요청...');
     const response = await glm.generateJSON<StyleProfile & {
       commonPhrases?: string[];
       sentenceStyle?: string;
       punctuation?: string;
+      imageTextLength?: {
+        perImage: number[];
+        average: number;
+        min: number;
+        max: number;
+      };
     }>(systemPrompt, userPrompt);
 
     console.log('[Style Agent] 스타일 분석 완료:');
@@ -96,6 +126,9 @@ ${blogTexts}
     }
     if (response.punctuation) {
       console.log('[Style Agent] - 문장 부호(punctuation):', response.punctuation);
+    }
+    if (response.imageTextLength) {
+      console.log('[Style Agent] - 이미지별 텍스트 길이(imageTextLength):', response.imageTextLength);
     }
 
     return {

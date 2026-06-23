@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import type { BlogPost } from '../types/blog';
+import type { BlogPost, ImageTextPair } from '../types/blog';
 import { chromium } from 'playwright';
 
 /**
@@ -137,11 +137,13 @@ export class CrawlerService {
       // 네이버 블로그 본문 선택자
       const title = this.extractTitle($, outerTitle);
       const content = this.extractContent($);
+      const imageTextPairs = this.extractImageTextPairs($);
 
       console.log('[Crawler] 크롤링 결과:', {
         titleLength: title.length,
         contentLength: content.length,
         titlePreview: title.substring(0, 50),
+        imageCount: imageTextPairs.length,
       });
 
       if (!title && !content) {
@@ -152,6 +154,7 @@ export class CrawlerService {
         title,
         content,
         url,
+        imageTextPairs,
       };
     } finally {
       await browser.close();
@@ -296,6 +299,223 @@ export class CrawlerService {
       .replace(/\s+/g, ' ') // 여러 공백을 하나로
       .replace(/\n+/g, '\n') // 여러 줄바꿈을 하나로
       .trim();
+  }
+
+  /**
+   * 본문 이미지 여부 확인 (URL 패턴 기반 필터링)
+   */
+  private isContentImage(url: string): boolean {
+    if (!url) return false;
+
+    // 본문 이미지 URL 패턴
+    const contentPatterns = [
+      /postfiles\.pstatic\.net/,
+      /blogfiles\.pstatic\.net/,
+    ];
+
+    // 제외할 URL 패턴 (본문 외)
+    const excludePatterns = [
+      /blogpfthumb/,           // 프로필 썸네일
+      /map\.pstatic\.net/,      // 지도 이미지
+      /ssl\.pstatic\.net\/static/, // 지도 정적 이미지
+      /editor-static\.pstatic\.net/, // 에디터 관련
+      /simg\.pstatic\.net/,    // 정적 맵 이미지
+      /reviewnote\.cloud/,     // 외부 서비스 (필요시 제외)
+    ];
+
+    // 제외 패턴 확인
+    if (excludePatterns.some(pattern => pattern.test(url))) {
+      return false;
+    }
+
+    // 본문 패턴 확인
+    return contentPatterns.some(pattern => pattern.test(url));
+  }
+
+  /**
+   * 이미지-텍스트 쌍 추출
+   * 각 이미지와 그 다음에 오는 텍스트를 쌍으로 추출
+   */
+  private extractImageTextPairs($: cheerio.CheerioAPI): ImageTextPair[] {
+    const pairs: ImageTextPair[] = [];
+
+    try {
+      // 본문 컨테이너 찾기
+      const contentContainer = this.findContentContainer($);
+      if (!contentContainer || contentContainer.length === 0) {
+        console.warn('[Crawler] 본문 컨테이너를 찾지 못함');
+        return pairs;
+      }
+
+      // 모든 이미지 찾기
+      const allImages = contentContainer.find('img').toArray();
+      console.log('[Crawler] 발견된 전체 이미지 개수:', allImages.length);
+
+      // 본문 이미지만 필터링
+      const contentImages = allImages.filter(img => {
+        const $img = cheerio.load(img);
+        const url = $img('img').attr('src') || '';
+        return this.isContentImage(url);
+      });
+      console.log('[Crawler] 필터링된 본문 이미지 개수:', contentImages.length);
+
+      contentImages.forEach((img, index) => {
+        const $img = cheerio.load(img);
+        const imageUrl = $img('img').attr('src') || '';
+        const altText = $img('img').attr('alt') || '';
+
+        // 이미지 다음에 오는 텍스트 추출 (섹션 기반)
+        const textAfter = this.extractTextAfterImage($, contentContainer, img);
+
+        if (imageUrl || textAfter) {
+          pairs.push({
+            imageUrl,
+            altText,
+            textAfter,
+          });
+          console.log(`[Crawler] 이미지 ${index + 1}: URL=${imageUrl.substring(0, 50)}..., 텍스트 길이=${textAfter.length}`);
+        }
+      });
+
+    } catch (error) {
+      console.error('[Crawler] 이미지-텍스트 쌍 추출 오류:', error);
+    }
+
+    return pairs;
+  }
+
+  /**
+   * 본문 컨테이너 찾기
+   * 네이버 블로그의 구조에 맞는 선택자 사용
+   */
+  private findContentContainer($: cheerio.CheerioAPI): cheerio.Cheerio<any> {
+    const selectors = [
+      '#postViewArea',              // 네이버 블로그 본문 영역 (가장 확실)
+      '.se-main-content',           // 스마트에디터 본문
+      '[id^="SE-"]',                // UUID 기반 섹션 컨테이너
+      '.se-content',                // 에디터 컨텐츠
+      '.se-viewer .se-section',     // 뷰어 섹션
+    ];
+
+    for (const selector of selectors) {
+      const container = $(selector).first();
+      if (container.length > 0) {
+        console.log(`[Crawler] 본문 컨테이너 발견 (${selector})`);
+        return container;
+      }
+    }
+
+    console.warn('[Crawler] 본문 컨테이너를 찾지 못함, body 사용');
+    return $('body');
+  }
+
+  /**
+   * 이미지 다음에 오는 텍스트 추출 (섹션 기반)
+   * 네이버 블로그 구조: 이미지와 텍스트가 별도 섹션(#SE-uuid)에 있음
+   */
+  private extractTextAfterImage(
+    $: cheerio.CheerioAPI,
+    container: cheerio.Cheerio<any>,
+    currentImg: any
+  ): string {
+    try {
+      const $currentImg = $(currentImg);
+
+      // 1. 캡션 텍스트 확인 (이미지 바로 옆에 있는 캡션)
+      const parent = $currentImg.parent();
+      const caption = parent?.find('.se-caption, .se-image-caption, .se-sticker-caption').text();
+      if (caption && caption.trim().length > 0) {
+        return this.cleanText(caption);
+      }
+
+      // 2. 현재 이미지가 속한 섹션 찾기
+      const currentSection = $currentImg.closest('[id^="SE-"], .se-section, .se-component-content');
+      if (!currentSection.length) {
+        // 섹션을 찾지 못하면 기존 방식 사용
+        return this.extractTextAfterImageLegacy($, container, currentImg);
+      }
+
+      // 3. 현재 섹션 다음 섹션들의 텍스트 수집 (너무 길지 않게)
+      let text = '';
+      let nextSection = currentSection.nextAll('[id^="SE-"], .se-section, .se-component-content').first();
+
+      // 최대 3개 섹션까지만 텍스트 수집
+      let sectionCount = 0;
+      const maxSections = 3;
+
+      while (nextSection.length && sectionCount < maxSections) {
+        const sectionText = nextSection.text();
+
+        // 이미지 섹션이면 중지 (이미지가 다시 시작되면 텍스트 끝)
+        if (nextSection.find('img').length > 0) {
+          break;
+        }
+
+        text += sectionText + ' ';
+        sectionCount++;
+
+        // 다음 섹션으로 이동
+        nextSection = nextSection.nextAll('[id^="SE-"], .se-section, .se-component-content').first();
+      }
+
+      const cleaned = this.cleanText(text);
+
+      // 너무 길면 앞부분만 반환 (최대 500자)
+      if (cleaned.length > 500) {
+        // 문장 단위로 자르기
+        const sentences = cleaned.split(/[.!?]/).filter(s => s.trim().length > 0);
+        return sentences.slice(0, 3).join('. ') + '.';
+      }
+
+      return cleaned;
+    } catch (error) {
+      console.error('[Crawler] 텍스트 추출 오류:', error);
+      return this.extractTextAfterImageLegacy($, container, currentImg);
+    }
+  }
+
+  /**
+   * 기존 텍스트 추출 방식 (fallback)
+   */
+  private extractTextAfterImageLegacy(
+    $: cheerio.CheerioAPI,
+    container: cheerio.Cheerio<any>,
+    currentImg: any
+  ): string {
+    try {
+      let text = '';
+      let foundImage = false;
+
+      // 현재 이미지가 있는 위치부터 순회
+      container.contents().each((_, elem) => {
+        if (foundImage) {
+          // 다음 요소가 이미지이면 중지
+          if (elem.type === 'tag' && elem.tagName === 'img') {
+            return false;
+          }
+
+          // 텍스트 노드 또는 요소에서 텍스트 추출
+          if (elem.type === 'text') {
+            text += elem.data;
+          } else if (elem.type === 'tag') {
+            const $elem = $(elem);
+            if (!['img', 'video', 'iframe', 'script', 'style'].includes(elem.tagName)) {
+              text += $elem.text();
+            }
+          }
+        } else {
+          // 현재 이미지를 찾으면 다음 요소부터 텍스트 수집 시작
+          if (elem === currentImg) {
+            foundImage = true;
+          }
+        }
+      });
+
+      return this.cleanText(text);
+    } catch (error) {
+      console.error('[Crawler] 레거시 텍스트 추출 오류:', error);
+      return '';
+    }
   }
 
   /**
