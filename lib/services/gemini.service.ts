@@ -34,10 +34,50 @@ export interface TimelineItem {
 export class GeminiService {
   private genAI: GoogleGenerativeAI;
   private model: string;
+  private maxRetries: number = 3;
+  private retryDelay: number = 2000; // 2초
 
   constructor(apiKey: string, model: string = 'gemini-2.5-flash') {
     this.genAI = new GoogleGenerativeAI(apiKey);
     this.model = model;
+  }
+
+  /**
+   * 재시도 로직이 포함된 generateContent 호출
+   */
+  private async generateWithRetry(
+    genModel: any,
+    content: any[]
+  ): Promise<any> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+      try {
+        console.log(`[Gemini] 시도 ${attempt}/${this.maxRetries}`);
+        const result = await genModel.generateContent(content);
+        return result;
+      } catch (error: any) {
+        lastError = error;
+        const is503 = error.message?.includes('503') || error.status === 503;
+
+        if (is503 && attempt < this.maxRetries) {
+          const delay = this.retryDelay * attempt; // 시도마다 대기 시간 증가
+          console.log(`[Gemini] 503 에러, ${delay}ms 후 재시도...`);
+          await this.sleep(delay);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw lastError;
+  }
+
+  /**
+   * 대기 함수
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
@@ -103,7 +143,7 @@ export class GeminiService {
 이미지 순서: ${images.map((_, i) => `#${i}`).join(', ')}`;
 
     try {
-      const result = await genModel.generateContent([
+      const result = await this.generateWithRetry(genModel, [
         systemPrompt,
         userPrompt,
         ...imageParts,
