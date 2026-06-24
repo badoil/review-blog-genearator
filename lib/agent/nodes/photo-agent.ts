@@ -1,6 +1,7 @@
 import type { BlogState } from '../state';
 import type { PhotoAnalysis } from '../../types/photo';
 import { getGeminiService } from '../../services/gemini.service';
+import { getPhotoCacheService } from '../../services/cache.service';
 
 /**
  * Photo Agent Node
@@ -19,12 +20,30 @@ export async function photoNode(state: BlogState): Promise<Partial<BlogState>> {
   }
 
   try {
+    const photoCache = getPhotoCacheService();
+
+    // 이미지 URL 기반 캐시 키 생성
+    const imageUrls = images.map(img => img.url || '').join(',');
+    const cacheKey = imageUrls;
+
+    // 캐시 확인
+    const cached = await photoCache.get(cacheKey);
+    if (cached) {
+      console.log('[Photo Agent] 캐시된 결과 사용');
+      return {
+        photoAnalysis: cached,
+      };
+    }
+
+    console.log('[Photo Agent] 캐시 미스, Gemini 이미지 분석 시작...');
     const gemini = getGeminiService();
 
-    console.log('[Photo Agent] Gemini 이미지 분석 시작...');
     // Gemini로 이미지 분석
     const photoAnalysis = await gemini.analyzeImages(images);
     console.log('[Photo Agent] 이미지 분석 완료:', photoAnalysis);
+
+    // 캐시 저장
+    await photoCache.set(cacheKey, photoAnalysis);
 
     return {
       photoAnalysis,

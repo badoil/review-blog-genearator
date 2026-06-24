@@ -1,6 +1,7 @@
 import type { BlogState } from '../state';
 import type { StyleProfile } from '../../types/style';
 import { getGLMService } from '../../services/glm.service';
+import { getStyleCacheService } from '../../services/cache.service';
 
 /**
  * Style Agent Node
@@ -18,6 +19,23 @@ export async function styleNode(state: BlogState): Promise<Partial<BlogState>> {
   }
 
   try {
+    const styleCache = getStyleCacheService();
+
+    // 블로그 URL 기반 캐시 키 생성 (정렬하여 일관성 유지)
+    const sortedUrls = [...blogUrls].sort();
+    const cacheKey = sortedUrls.join(',');
+
+    // 캐시 확인
+    const cached = await styleCache.get(cacheKey);
+    if (cached) {
+      console.log('[Style Agent] 캐시된 결과 사용');
+      return {
+        styleProfile: cached,
+        referencePosts: cached.referencePosts || '', // 필요시 참고 블로그 내용도 포함
+      };
+    }
+
+    console.log('[Style Agent] 캐시 미스, 스타일 분석 시작...');
     const glm = getGLMService();
 
     // 블로그 글 가져오기 (크롤러 서비스)
@@ -135,10 +153,17 @@ ${blogTexts}
       console.log('[Style Agent] - 섹션별 텍스트 길이(sectionTextLength):', response.sectionTextLength);
     }
 
-    return {
+    const styleResult = {
       styleProfile: response as StyleProfile,
       referencePosts: blogTexts, // 참고 블로그 내용 저장 (리뷰어에서 비교용)
     };
+
+    // 캐시 저장
+    const sortedUrls = [...blogUrls].sort();
+    const cacheKey = sortedUrls.join(',');
+    await styleCache.set(cacheKey, styleResult.styleProfile);
+
+    return styleResult;
   } catch (error) {
     console.error('[Style Agent] 스타일 분석 실패:', error);
     return {
