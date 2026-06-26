@@ -77,7 +77,6 @@ export async function writerNode(state: BlogState): Promise<Partial<BlogState>> 
 ## 사진 분석 결과 (새 글의 내용)
 - 활동: ${safeJoin(photoAnalysis.activities)}
 - 음식: ${safeJoin(photoAnalysis.foods)}
-- 분위기: ${photoAnalysis.mood || '정보 없음'}
 ${safeTimeline(photoAnalysis.timeline)}
 
 **중요: 장소나 위치를 추측하지 마세요. 음식만으로 장소를 단정하지 마세요.**
@@ -124,18 +123,21 @@ ${images && images.length > 0 ? `
 업로드된 이미지가 ${images.length}장 있습니다. 위의 "각 이미지별 분석 결과"를 참고하여 글을 작성할 때 이미지를 적절한 위치에 배치해주세요.
 
 이미지 배치 방법:
-- 각 이미지의 내용(장소, 음식, 활동)을 고려하여 관련 문단 근처에 배치
-- 예: 카페 이미지는 카페 소개 문단 후, 음식 이미지는 음식 설명 후
-- ${images.length}장의 이미지를 글 전체에 고르게 분배
+- 각 이미지를 해당 섹션 **앞**에 배치 (이미지 먼저, 텍스트 나중)
+- 섹션은 "섹션 1", "섹션 2" ... 형식으로 번호로 표기
+- position은 항상 "before" 사용 (이미지가 섹션 텍스트 앞에 옴)
 
 배치 위치를 JSON 형식으로 표시해주세요:
 \`\`\`json
 [
-  {"imageIndex": 0, "position": "after", "section": "도입부"},
-  {"imageIndex": 1, "position": "after", "section": "음식 설명"},
+  {"imageIndex": 0, "position": "before", "sectionTitle": "섹션 1"},
+  {"imageIndex": 1, "position": "before", "sectionTitle": "섹션 2"},
   ...
 ]
 \`\`\`
+
+**중요: sectionTitle은 반드시 "섹션 N" 형식이어야 합니다. (예: "섹션 1", "섹션 2")**
+**중요: position은 항상 "before"를 사용하세요 (이미지 먼저, 텍스트 나중)**
 ` : ''}
 
 다음 형식으로 작성해주세요:
@@ -205,7 +207,24 @@ ${images && images.length > 0 ? `
       if (jsonMatch) {
         try {
           imagePlacements = JSON.parse(jsonMatch[1]);
-          console.log('[Writer Agent] 이미지 배치 정보 추출 성공:', imagePlacements);
+
+          // 필드명 검증 및 변환 (section → sectionTitle)
+          if (Array.isArray(imagePlacements)) {
+            imagePlacements = imagePlacements.map((item: any) => {
+              // section 필드가 있으면 sectionTitle로 변환
+              if (item.section && !item.sectionTitle) {
+                return { ...item, sectionTitle: item.section, section: undefined };
+              }
+              // after를 before로 강제 변환 (이미지 먼저 나오도록)
+              if (item.position === 'after') {
+                console.warn('[Writer Agent] after 감지, before로 변환:', item);
+                return { ...item, position: 'before' };
+              }
+              return item;
+            });
+          }
+
+          console.log('[Writer Agent] 이미지 배치 정보 추출 성공:', JSON.stringify(imagePlacements, null, 2));
 
           // JSON 부분을 제거한 clean 글 생성
           cleanDraft = draft.replace(/```json\s*[\s\S]*?\s*```/, '').trim();

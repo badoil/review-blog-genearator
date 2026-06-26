@@ -22,9 +22,10 @@ export async function photoNode(state: BlogState): Promise<Partial<BlogState>> {
   try {
     const photoCache = getPhotoCacheService();
 
-    // 이미지 URL 기반 캐시 키 생성
-    const imageUrls = images.map(img => img.url || '').join(',');
-    const cacheKey = imageUrls;
+    // 이미지 파일 경로/파일명 기반 캐시 키 생성
+    const imageKeys = images.map(img => `${img.path || ''}:${img.filename || ''}`).join('|');
+    const cacheKey = imageKeys;
+    console.log('[Photo Agent] 캐시 키 (파일 기반):', imageKeys.substring(0, 50) + '...');
 
     // 캐시 확인
     const cached = await photoCache.get(cacheKey);

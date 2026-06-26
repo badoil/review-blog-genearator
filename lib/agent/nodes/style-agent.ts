@@ -159,8 +159,6 @@ ${blogTexts}
     };
 
     // 캐시 저장
-    const sortedUrls = [...blogUrls].sort();
-    const cacheKey = sortedUrls.join(',');
     await styleCache.set(cacheKey, styleResult.styleProfile);
 
     return styleResult;

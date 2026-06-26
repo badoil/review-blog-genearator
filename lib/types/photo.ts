@@ -32,3 +32,11 @@ export interface TimelineItem {
   location?: string;
   activity?: string;
 }
+
+// 이미지 배치 정보
+export interface ImagePlacement {
+  imageIndex: number;           // 이미지 순서 (0-based)
+  position: 'before' | 'after'; // 섹션의 앞/뒤 배치
+  sectionTitle: string;         // 섹션 제목 (예: "섹션 1", "섹션 2")
+  sectionContent?: string;      // 섹션 내용 요약 (선택)
+}

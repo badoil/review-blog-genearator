@@ -11,6 +11,27 @@ interface SavedPostSummary {
   naverUrl?: string;
 }
 
+/**
+ * 블로그 글 렌더링 컴포넌트
+ * HTML이 포함되어 있으면 dangerouslySetInnerHTML 사용
+ */
+function RenderedContent({ content }: { content: string }) {
+  // HTML 태그가 포함되어 있는지 확인
+  const hasHtml = /<img|<h[1-6]|<p|<div|<br/i.test(content);
+
+  if (hasHtml) {
+    return (
+      <div
+        className="prose prose-zinc dark:prose-invert max-w-none"
+        dangerouslySetInnerHTML={{ __html: content }}
+      />
+    );
+  }
+
+  // HTML이 없으면 일반 텍스트로 표시
+  return <div className="whitespace-pre-wrap">{content}</div>;
+}
+
 export default function Home() {
   // 기존 상태
   const [blogUrls, setBlogUrls] = useState(['', '']);
@@ -18,8 +39,6 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [result, setResult] = useState<string | null>(null);
-  const [resultImages, setResultImages] = useState<Array<{ path: string; base64: string }>>([]);
-  const [imagePlacements, setImagePlacements] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
@@ -99,8 +118,6 @@ export default function Home() {
 
       // 결과에 표시
       setResult(data.finalPost);
-      setResultImages(data.images || []);
-      setImagePlacements([]);
 
       // 저장된 데이터도 업데이트
       setGeneratedData({
@@ -136,7 +153,6 @@ export default function Home() {
       // 현재 불러온 글이면 초기화
       if (selectedPostId === id) {
         setResult(null);
-        setResultImages([]);
         setGeneratedData({});
         setSelectedPostId(null);
       }
@@ -206,8 +222,6 @@ export default function Home() {
     setIsGenerating(true);
     setError(null);
     setResult(null);
-    setResultImages([]);
-    setImagePlacements([]);
     setSelectedPostId(null);
 
     try {
@@ -226,9 +240,17 @@ export default function Home() {
       }
 
       const data = await response.json();
-      setResult(data.finalPost || data.draft);
-      setResultImages(data.images || []);
-      setImagePlacements(data.imagePlacements || []);
+
+      // 이미지가 포함된 HTML이 있으면 사용, 없으면 일반 텍스트 사용
+      const content = data.finalContentWithImages || data.finalPost || data.draft;
+      setResult(content);
+
+      // 디버깅: imagePlacements와 내용 출력
+      console.log('=== 디버깅 정보 ===');
+      console.log('이미지 배치 정보:', data.imagePlacements);
+      console.log('finalContentWithImages 길이:', data.finalContentWithImages?.length);
+      console.log('draft 길이:', data.draft?.length);
+      console.log('원본 draft (처음 500자):', data.draft?.substring(0, 500));
 
       // 저장용 데이터 저장
       setGeneratedData({
@@ -480,20 +502,10 @@ export default function Home() {
             <div className="mt-8">
               <h2 className="text-lg font-semibold mb-4">생성된 블로그 글</h2>
 
-              {/* 이미지 미리보기 */}
-              {resultImages.length > 0 && (
-                <div className="mb-4 p-4 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
-                  <h3 className="text-sm font-medium mb-2">업로드된 이미지 ({resultImages.length}장)</h3>
-                  <div className="grid grid-cols-4 gap-2">
-                    {resultImages.map((img, idx) => (
-                      <img key={idx} src={img.base64} alt={`result ${idx}`} className="w-full h-24 object-cover rounded" />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 생성된 글 */}
-              <div className="p-6 bg-zinc-100 dark:bg-zinc-800 rounded-lg whitespace-pre-wrap mb-4">{result}</div>
+              {/* 생성된 글 (이미지 포함) */}
+              <div className="p-6 bg-zinc-100 dark:bg-zinc-800 rounded-lg mb-4">
+                <RenderedContent content={result} />
+              </div>
 
               {/* 네이버 블로그 ID 입력 */}
               <div className="mb-4">
@@ -514,12 +526,12 @@ export default function Home() {
               </div>
 
               {/* 이미지 배치 정보 (디버깅용) */}
-              {imagePlacements.length > 0 && (
-                <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs">
-                  <h4 className="font-medium mb-1">이미지 배치 정보:</h4>
-                  <pre className="whitespace-pre-wrap">{JSON.stringify(imagePlacements, null, 2)}</pre>
-                </div>
-              )}
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs">
+                <details>
+                  <summary className="font-medium cursor-pointer mb-2">이미지 배치 정보 (디버깅)</summary>
+                  <pre className="whitespace-pre-wrap bg-zinc-100 dark:bg-zinc-800 p-2 rounded mt-2">API에서 imagePlacements를 확인하세요. 브라우저 개발자 도구의 Network 탭에서 /api/generate 응답을 확인하세요.</pre>
+                </details>
+              </div>
 
               {/* 버튼들 */}
               <div className="flex gap-2">

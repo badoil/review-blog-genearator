@@ -26,6 +26,7 @@ export interface SavedPost extends SavedPostSummary {
   photoAnalysis: any;
   styleProfile: any;
   blogUrls: string[];
+  images?: Array<{ path: string; base64: string }>; // 프론트에서 사용하기 위해 base64 포함
 }
 
 /**

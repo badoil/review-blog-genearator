@@ -4,6 +4,67 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
+ * 이미지 배치 정보를 사용하여 텍스트와 이미지가 합쳐진 HTML 생성
+ * 순서: 제목 → 이미지1 → 섹션1 → 이미지2 → 섹션2 → ...
+ */
+function renderContentWithImages(
+  content: string,
+  images: Array<{ path: string; base64: string }>,
+  imagePlacements: any[]
+): string {
+  if (!images || images.length === 0) {
+    return content;
+  }
+
+  // imagePlacements가 없으면 이미지를 섹션 순서대로 배치
+  if (!imagePlacements || imagePlacements.length === 0) {
+    // 간단한 경우: 이미지를 섹션별로 배치
+    const lines = content.split('\n');
+    let html = '';
+    let sectionIndex = 0;
+
+    lines.forEach((line) => {
+      html += line + '\n';
+
+      // 섹션 시작 패턴을 감지하면 해당 섹션에 이미지를 먼저 추가
+      if (line.match(/^\[섹션\s+\d+:/) || line.match(/^#\s+/)) {
+        // 첫 번째 #는 제목이므로 이미지를 추가하지 않음
+        if (!line.match(/^#\s+/) && sectionIndex < images.length) {
+          const img = images[sectionIndex];
+          html += `\n<img src="${img.base64}" alt="블로그 이미지" style="max-width: 500px !important; width: 100% !important; height: auto !important; object-fit: contain !important; border-radius: 12px !important; margin: 16px auto !important; display: block !important;" />\n\n`;
+          sectionIndex++;
+        }
+      }
+    });
+
+    return html;
+  }
+
+  // imagePlacements가 있는 경우: 섹션별 이미지 매핑
+  // 간단한 매핑: 섹션 N → 이미지 N-1
+  const lines = content.split('\n');
+  let html = '';
+  let sectionCount = 0;
+
+  lines.forEach((line) => {
+    html += line + '\n';
+
+    // 섹션 시작 패턴 감지
+    if (line.match(/^\[섹션\s+\d+:/)) {
+      sectionCount++;
+      // 해당 섹션에 이미지 추가 (섹션 1 → 이미지 0)
+      const imageIdx = sectionCount - 1;
+      if (imageIdx < images.length) {
+        const img = images[imageIdx];
+        html += `\n<img src="${img.base64}" alt="블로그 이미지" style="max-width: 500px !important; width: 100% !important; height: auto !important; object-fit: contain !important; border-radius: 12px !important; margin: 16px auto !important; display: block !important;" />\n\n`;
+      }
+    }
+  });
+
+  return html;
+}
+
+/**
  * 블로그 글 생성 API
  *
  * POST /api/generate
@@ -69,13 +130,23 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('[API] 블로그 생성 성공');
+
+    // 이미지와 글이 합쳐진 HTML 생성
+    const finalContent = result.finalPost || result.draft || '';
+    const contentWithImages = renderContentWithImages(
+      finalContent,
+      imageObjects,
+      result.imagePlacements || []
+    );
+
     return NextResponse.json({
       photoAnalysis: result.photoAnalysis,
       styleProfile: result.styleProfile,
       draft: result.draft,
       finalPost: result.finalPost,
-      images: imageObjects,  // 이미지 정보 추가 (미리보기용)
-      imagePlacements: result.imagePlacements,  // 이미지 배치 정보
+      finalContentWithImages: contentWithImages,  // 이미지 포함 HTML
+      images: imageObjects,
+      imagePlacements: result.imagePlacements,
     });
   } catch (error) {
     console.error('[API] 블로그 생성 오류:', error);

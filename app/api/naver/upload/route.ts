@@ -131,10 +131,12 @@ function parseBlogPost(post: string): {
     ? tagsMatch[1].split('#').map((t) => t.trim()).filter(Boolean)
     : [];
 
-  // 본문 (제목과 태그 제외)
+  // 본문 (제목, 태그, 이미지 태그 제외)
   const content = post
     .replace(/^#\s*.+$/m, '')
     .replace(/태그:\s*.+/m, '')
+    .replace(/<img[^>]*>/g, '')  // 이미지 태그 제거 (이미지는 별도 업로드)
+    .replace(/<[^>]+>/g, '')     // 다른 HTML 태그도 제거
     .trim();
 
   return { title, content, tags };
