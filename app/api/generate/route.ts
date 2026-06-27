@@ -27,11 +27,11 @@ function renderContentWithImages(
       html += line + '\n';
 
       // 섹션 시작 패턴을 감지하면 해당 섹션에 이미지를 먼저 추가
-      if (line.match(/^\[섹션\s+\d+:/) || line.match(/^#\s+/)) {
+      if (line.match(/^(?:\[)?섹션\s+\d+/) || line.match(/^#\s+/)) {
         // 첫 번째 #는 제목이므로 이미지를 추가하지 않음
         if (!line.match(/^#\s+/) && sectionIndex < images.length) {
           const img = images[sectionIndex];
-          html += `\n<img src="${img.base64}" alt="블로그 이미지" style="max-width: 500px !important; width: 100% !important; height: auto !important; object-fit: contain !important; border-radius: 12px !important; margin: 16px auto !important; display: block !important;" />\n\n`;
+          html += `\n<img src="${img.base64}" alt="블로그 이미지" style="max-width: 200px !important; width: 100% !important; height: auto !important; object-fit: contain !important; border-radius: 12px !important; margin: 16px auto !important; display: block !important;" />\n\n`;
           sectionIndex++;
         }
       }
@@ -49,14 +49,14 @@ function renderContentWithImages(
   lines.forEach((line) => {
     html += line + '\n';
 
-    // 섹션 시작 패턴 감지
-    if (line.match(/^\[섹션\s+\d+:/)) {
+    // 섹션 시작 패턴 감지 (대괄호 선택적)
+    if (line.match(/^(?:\[)?섹션\s+\d+/)) {
       sectionCount++;
       // 해당 섹션에 이미지 추가 (섹션 1 → 이미지 0)
       const imageIdx = sectionCount - 1;
       if (imageIdx < images.length) {
         const img = images[imageIdx];
-        html += `\n<img src="${img.base64}" alt="블로그 이미지" style="max-width: 500px !important; width: 100% !important; height: auto !important; object-fit: contain !important; border-radius: 12px !important; margin: 16px auto !important; display: block !important;" />\n\n`;
+        html += `\n<img src="${img.base64}" alt="블로그 이미지" style="max-width: 200px !important; width: 100% !important; height: auto !important; object-fit: contain !important; border-radius: 12px !important; margin: 16px auto !important; display: block !important;" />\n\n`;
       }
     }
   });

@@ -81,10 +81,14 @@ export class GeminiService {
   }
 
   /**
-   * 이미지 분석 - 각 이미지별로 분석 결과 반환
+   * 배치 단위로 이미지 분석 (내부 헬퍼 함수)
    */
-  async analyzeImages(images: Array<{ base64?: string; path: string }>): Promise<PhotoAnalysis> {
-    console.log('[Gemini] 이미지 분석 시작, 이미지 개수:', images.length);
+  private async analyzeBatch(
+    batch: Array<{ base64?: string; path: string }>,
+    batchIndex: number,
+    startIndex: number
+  ): Promise<PhotoAnalysis> {
+    console.log(`[Gemini] 배치 ${batchIndex} 분석 시작, 이미지 개수:`, batch.length);
 
     const genModel = this.genAI.getGenerativeModel({ model: this.model });
 
@@ -122,10 +126,10 @@ export class GeminiService {
 - mood: 전체 사진의 분위기를 한 단어로 표현
 - timeline: 이미지 순서에 따른 동선 추정
 
-중요: 이미지 업로드 순서대로 index를 0, 1, 2... 부여하세요.`;
+중요: 이미지 업로드 순서대로 index를 ${startIndex}, ${startIndex + 1}... 로 부여하세요.`;
 
     // 이미지 파트 준비
-    const imageParts = images.map((img, idx) => {
+    const imageParts = batch.map((img, idx) => {
       if (img.base64) {
         const base64Data = img.base64.split(',')[1] || img.base64;
         return {
@@ -138,9 +142,9 @@ export class GeminiService {
       throw new Error('파일 경로는 지원하지 않습니다. base64가 필요합니다.');
     });
 
-    const userPrompt = `다음 ${images.length}장의 사진을 순서대로 분석해주세요. JSON 형식으로만 응답해주세요.
+    const userPrompt = `다음 ${batch.length}장의 사진을 순서대로 분석해주세요. JSON 형식으로만 응답해주세요.
 
-이미지 순서: ${images.map((_, i) => `#${i}`).join(', ')}`;
+이미지 순서: ${batch.map((_, i) => `#${startIndex + i}`).join(', ')}`;
 
     try {
       const result = await this.generateWithRetry(genModel, [
@@ -163,12 +167,18 @@ export class GeminiService {
 
       const parsed = JSON.parse(jsonMatch[0]) as any;
 
+      // 인덱스를 전체 이미지 순서에 맞게 조정
+      const adjustedImages = (parsed.images || []).map((img: ImageAnalysis) => ({
+        ...img,
+        index: startIndex + img.index,
+      }));
+
       // 전체 장소/활동/음식 목록 추출 (중복 제거)
       const allPlaces = new Set<string>();
       const allActivities = new Set<string>();
       const allFoods = new Set<string>();
 
-      parsed.images?.forEach((img: ImageAnalysis) => {
+      adjustedImages.forEach((img: ImageAnalysis) => {
         img.places?.forEach(p => allPlaces.add(p));
         img.activities?.forEach(a => allActivities.add(a));
         img.foods?.forEach(f => allFoods.add(f));
@@ -176,7 +186,7 @@ export class GeminiService {
 
       // PhotoAnalysis 형식으로 변환
       const photoAnalysis: PhotoAnalysis = {
-        images: parsed.images || [],
+        images: adjustedImages,
         places: Array.from(allPlaces),
         activities: Array.from(allActivities),
         foods: Array.from(allFoods),
@@ -184,7 +194,7 @@ export class GeminiService {
         timeline: parsed.timeline || [],
       };
 
-      console.log('[Gemini] 이미지 분석 완료:', {
+      console.log(`[Gemini] 배치 ${batchIndex} 분석 완료:`, {
         imageCount: photoAnalysis.images.length,
         places: photoAnalysis.places,
         activities: photoAnalysis.activities,
@@ -194,9 +204,86 @@ export class GeminiService {
 
       return photoAnalysis;
     } catch (error) {
-      console.error('[Gemini] 이미지 분석 실패:', error);
+      console.error(`[Gemini] 배치 ${batchIndex} 분석 실패:`, error);
       throw error;
     }
+  }
+
+  /**
+   * 이미지 분석 - 배치 단위로 병렬 처리
+   * 배치 사이즈: 2장씩
+   */
+  async analyzeImages(images: Array<{ base64?: string; path: string }>): Promise<PhotoAnalysis> {
+    const BATCH_SIZE = 2;
+    console.log(`[Gemini] 전체 이미지 분석 시작, 총 ${images.length}장 (배치 사이즈: ${BATCH_SIZE})`);
+
+    if (images.length === 0) {
+      return {
+        images: [],
+        places: [],
+        activities: [],
+        foods: [],
+        mood: '',
+        timeline: [],
+      };
+    }
+
+    // 이미지를 배치로 나누기
+    const batches: Array<{ batch: Array<{ base64?: string; path: string }>, startIndex: number }> = [];
+    for (let i = 0; i < images.length; i += BATCH_SIZE) {
+      batches.push({
+        batch: images.slice(i, i + BATCH_SIZE),
+        startIndex: i,
+      });
+    }
+
+    console.log(`[Gemini] ${batches.length}개 배치로 나누어 병렬 처리`);
+
+    // 배치별 병렬 처리
+    const batchResults = await Promise.all(
+      batches.map(({ batch, startIndex }, idx) =>
+        this.analyzeBatch(batch, idx + 1, startIndex)
+      )
+    );
+
+    // 배치 결과 합치기
+    const mergedImages: ImageAnalysis[] = [];
+    const allPlaces = new Set<string>();
+    const allActivities = new Set<string>();
+    const allFoods = new Set<string>();
+    const allTimeline: TimelineItem[] = [];
+
+    batchResults.forEach((result, batchIdx) => {
+      console.log(`[Gemini] 배치 ${batchIdx + 1} 결과 병합 중...`);
+      mergedImages.push(...result.images);
+      result.places.forEach(p => allPlaces.add(p));
+      result.activities.forEach(a => allActivities.add(a));
+      result.foods.forEach(f => allFoods.add(f));
+      allTimeline.push(...result.timeline);
+    });
+
+    // 전체 분위기는 첫 번째 배치의 것을 사용하거나, 병합 전략 적용
+    // 여기서는 첫 번째 배치의 mood를 사용
+    const overallMood = batchResults[0]?.mood || '';
+
+    const photoAnalysis: PhotoAnalysis = {
+      images: mergedImages.sort((a, b) => a.index - b.index), // 인덱스 순서 정렬
+      places: Array.from(allPlaces),
+      activities: Array.from(allActivities),
+      foods: Array.from(allFoods),
+      mood: overallMood,
+      timeline: allTimeline,
+    };
+
+    console.log('[Gemini] 전체 이미지 분석 완료:', {
+      totalImages: photoAnalysis.images.length,
+      places: photoAnalysis.places,
+      activities: photoAnalysis.activities,
+      foods: photoAnalysis.foods,
+      mood: photoAnalysis.mood,
+    });
+
+    return photoAnalysis;
   }
 
   /**
