@@ -40,8 +40,41 @@ function renderContentWithImages(
     return html;
   }
 
-  // imagePlacements가 있는 경우: 섹션별 이미지 매핑
-  // 간단한 매핑: 섹션 N → 이미지 N-1
+  // imagePlacements가 있는 경우: 섹션별 이미지 배치
+  if (imagePlacements && imagePlacements.length > 0) {
+    console.log('[renderContentWithImages] imagePlacements 사용하여 섹션별 배치:', imagePlacements);
+
+    const lines = content.split('\n');
+    let html = '';
+    let placementIndex = 0;
+
+    lines.forEach((line) => {
+      html += line + '\n';
+
+      // 섹션 시작 패턴 감지 (볼드, 대괄호 모두 지원)
+      if (line.match(/섹션\s+\d+:/) && placementIndex < imagePlacements.length) {
+        const placement = imagePlacements[placementIndex];
+        const groupImageIndices = placement.groupImageIndices || [placement.imageIndex];
+
+        // 그룹에 속한 모든 이미지를 배치
+        const groupImagesHtml = groupImageIndices.map((imgIdx: number) => {
+          if (imgIdx < images.length) {
+            const img = images[imgIdx];
+            return `<img src="${img.base64}" alt="블로그 이미지" style="max-width: 200px !important; width: 100% !important; height: auto !important; object-fit: contain !important; border-radius: 12px !important; margin: 8px auto !important; display: inline-block !important;" />`;
+          }
+          return '';
+        }).join(' ');
+
+        // 이미지들을 감싸는 div
+        html += `\n<div class="group-images" style="text-align: center; margin: 16px 0;">\n${groupImagesHtml}\n</div>\n\n`;
+        placementIndex++;
+      }
+    });
+
+    return html;
+  }
+
+  // imagePlacements가 없고 섹션 마커가 있는 경우: 섹션별 이미지 매핑
   const lines = content.split('\n');
   let html = '';
   let sectionCount = 0;
