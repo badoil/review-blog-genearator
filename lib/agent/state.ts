@@ -1,6 +1,6 @@
 import type { UploadedImage } from '../types/photo';
 import type { StyleProfile } from '../types/style';
-import type { PhotoAnalysis } from '../types/photo';
+import type { PhotoAnalysis, PhotoGroupingResult } from '../types/photo';
 import type { UploadResult } from '../types/blog';
 
 // 이미지 배치 정보
@@ -21,6 +21,9 @@ export interface BlogState {
   // 병렬 실행 결과
   photoAnalysis?: PhotoAnalysis;
   styleProfile?: StyleProfile;
+
+  // Photo Grouping 결과
+  photoGrouping?: PhotoGroupingResult;
 
   // 참고 블로그 내용 (리뷰어에서 비교용)
   referencePosts?: string;

@@ -15,6 +15,10 @@ export interface ImageAnalysis {
   foods: string[];          // 이 이미지에서 식별된 음식
   time?: string;            // 추정 시간대 (아침, 점심, 저녁 등)
   location?: string;        // 구체적 장소 이름
+
+  // Photo Grouping용 필드
+  category: 'food' | 'activity' | 'place' | 'transport' | 'other';
+  mainItem: string;        // 그룹핑용 단일 키 (예: '타코야끄', '산책', '카페')
 }
 
 // 사진 분석 결과 (전체 + 개별)
@@ -39,4 +43,20 @@ export interface ImagePlacement {
   position: 'before' | 'after'; // 섹션의 앞/뒤 배치
   sectionTitle: string;         // 섹션 제목 (예: "섹션 1", "섹션 2")
   sectionContent?: string;      // 섹션 내용 요약 (선택)
+}
+
+// Photo Grouping 관련 타입
+export interface PhotoGroup {
+  id: string;                    // 그룹 ID (group-1, group-2...)
+  title: string;                 // 그룹 제목 (예: "타코야끄와 맥주")
+  description: string;           // 그룹 설명
+  imageIndices: number[];        // 포함된 이미지 인덱스 (업로드 순서)
+  category: string;              // 카테고리
+  mainItem: string;              // 그룹핑 키
+  time?: string;                 // 시간대
+  location?: string;             // 장소
+}
+
+export interface PhotoGroupingResult {
+  groups: PhotoGroup[];          // 그룹 목록 (업로드 순서 유지)
 }

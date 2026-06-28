@@ -2,6 +2,7 @@ import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
 import type { BlogState } from './state';
 import { photoNode } from './nodes/photo-agent';
 import { styleNode } from './nodes/style-agent';
+import { groupingNode } from './nodes/grouping-node';
 import { writerNode } from './nodes/writer-agent';
 import { reviewerNode } from './nodes/reviewer-agent';
 import { publisherNode } from './nodes/publisher-agent';
@@ -12,7 +13,7 @@ import type { UploadedImage } from '../types/photo';
  * Blog 생성을 위한 LangGraph 정의
  *
  * 아키텍처:
- *   (Photo + Style 병렬 실행) → Writer → Reviewer → Publisher → END
+ *   (Photo + Style 병렬 실행) → Grouping → Writer → Reviewer → Publisher → END
  *
  * Photo Agent와 Style Agent는 병렬로 실행됩니다.
  */
@@ -21,6 +22,7 @@ import type { UploadedImage } from '../types/photo';
 export const NODES = {
   PHOTO: 'photo',
   STYLE: 'style',
+  GROUPING: 'grouping',
   WRITER: 'writer',
   REVIEWER: 'reviewer',
   PUBLISHER: 'publisher',
@@ -50,6 +52,11 @@ const StateAnnotation = Annotation.Root({
     reducer: (x, y) => y ?? x,
   }),
   styleProfile: Annotation<any>({
+    default: () => undefined,
+    reducer: (x, y) => y ?? x,
+  }),
+  // Photo Grouping 결과
+  photoGrouping: Annotation<any | undefined>({
     default: () => undefined,
     reducer: (x, y) => y ?? x,
   }),
@@ -91,34 +98,16 @@ const StateAnnotation = Annotation.Root({
  * Blog 생성 그래프 생성
  */
 export function createBlogGraph() {
-  // StateGraph 정의 (새로운 API)
-  // const graph = new StateGraph(StateAnnotation);
-
-  // // 노드 추가
-  // graph.addNode('writer', writerNode);
-  // graph.addNode('reviewer', reviewerNode);
-  // graph.addNode('publisher', publisherNode);
   const graph = new StateGraph(StateAnnotation)
+  .addNode('grouping', groupingNode)
   .addNode('writer', writerNode)
-  .addNode('reviewer', reviewerNode)
-  // .addNode('publisher', publisherNode);
+  .addNode('reviewer', reviewerNode);
 
-
-  // 엣지 추가
- graph.addEdge(START, 'writer');
- graph.addEdge('writer', 'reviewer');
-
- // Reviewer → Publisher 또는 END (naverBlogId 유무에 따라)
-//  graph.addConditionalEdges('reviewer', {
-//    publish: 'publisher',
-//    end: END,
-//  }, {
-//    publish: (state: any) => state.naverBlogId ? 'publish' : 'end',
-//    end: () => 'end',
-//  });
-
- graph.addEdge('reviewer', END);
- 
+  // 엣지 추가: START → Grouping → Writer → Reviewer → END
+  graph.addEdge(START, 'grouping');
+  graph.addEdge('grouping', 'writer');
+  graph.addEdge('writer', 'reviewer');
+  graph.addEdge('reviewer', END);
 
   // 그래프 컴파일
   return graph.compile();
@@ -134,10 +123,10 @@ export async function generateBlogPost(
   naverBlogId?: string
 ): Promise<BlogState> {
   const uploadedImages: UploadedImage[] = images.map(img => ({
-  path: img.path,
-  filename: img.path.split('/').pop() || 'image.jpg',
-  base64: img.base64,
-}));
+    path: img.path,
+    filename: img.path.split('/').pop() || 'image.jpg',
+    base64: img.base64,
+  }));
   // 초기 상태
   let state: BlogState = {
     images: uploadedImages,
@@ -163,7 +152,7 @@ export async function generateBlogPost(
     return state;
   }
 
-  // 그래프 실행 (Writer → Reviewer → Publisher)
+  // 그래프 실행 (Grouping → Writer → Reviewer)
   const graph = createBlogGraph();
   const result = await graph.invoke(state);
 

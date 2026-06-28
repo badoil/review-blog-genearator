@@ -14,6 +14,8 @@ export interface ImageAnalysis {
   foods: string[];          // 이 이미지에서 식별된 음식
   time?: string;            // 추정 시간대 (아침, 점심, 저녁 등)
   location?: string;        // 구체적 장소 이름
+  category?: 'food' | 'activity' | 'place' | 'transport' | 'other';
+  mainItem?: string;        // 그룹핑용 단일 키
 }
 
 export interface PhotoAnalysis {
@@ -105,7 +107,9 @@ export class GeminiService {
       "activities": ["활동1", "활동2"],
       "foods": ["음식1", "음식2"],
       "time": "아침/점심/오후/저녁 (추정 가능한 경우)",
-      "location": "구체적 장소 이름 (카페명, 식당명 등)"
+      "location": "구체적 장소 이름 (카페명, 식당명 등)",
+      "category": "food|activity|place|transport|other 중 하나",
+      "mainItem": "이 이미지의 대표 항목 (단일 값, 예: 타코야끄, 산책, 카페, 서핑, 버스 등)"
     }
   ],
   "mood": "전체적인 분위기 (예: 여유로움, 활기참, 로맨틱 등)",
@@ -123,10 +127,22 @@ export class GeminiService {
   - foods: 음식이 보이면 구체적인 메뉴 이름
   - time: 그림자/조명 등으로 시간대 추정
   - location: 간판/표지 등으로 구체적 장소명 식별
+  - category: 이미지의 주요 카테고리 판단
+    - food: 음식/식당 관련 (음식, 식사, 메뉴, 접시 등)
+    - activity: 활동 관련 (산책, 운동, 놀이, 대화 등)
+    - place: 장소 관련 (카페, 해변, 공원, 건물 등 음식/활동 제외)
+    - transport: 이동 수단 관련 (버스, 기차, 자동차 등)
+    - other: 위 분류에 속하지 않는 경우
+  - mainItem: 이 이미지를 대표하는 단일 항목
+    - category가 food면: 음식 이름 (예: 타코야끄, 라멘, 스테이크)
+    - category가 activity면: 활동 이름 (예: 산책, 서핑, 대화)
+    - category가 place면: 장소 이름 (예: 카페, 해변, 공원)
+    - category가 transport면: 이동 수단 (예: 버스, 기차)
 - mood: 전체 사진의 분위기를 한 단어로 표현
 - timeline: 이미지 순서에 따른 동선 추정
 
-중요: 이미지 업로드 순서대로 index를 ${startIndex}, ${startIndex + 1}... 로 부여하세요.`;
+중요: 이미지 업로드 순서대로 index를 ${startIndex}, ${startIndex + 1}... 로 부여하세요.
+중요: category와 mainItem은 반드시 포함해야 합니다.`;
 
     // 이미지 파트 준비
     const imageParts = batch.map((img, idx) => {
