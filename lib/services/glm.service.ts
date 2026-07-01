@@ -1,9 +1,13 @@
 /**
- * GLM LLM 서비스
+ * GLM LLM 서비스 (LangChain ChatOpenAI 기반)
  *
- * 이 서비스는 GLM API를 호출하여 텍스트 생성을 수행합니다.
- * 비전 모델(Gemini)은 별도 서비스로 분리되었습니다.
+ * 이 서비스는 LangChain의 ChatOpenAI를 사용하여 GLM API를 호출합니다.
+ * RunnableConfig를 통해 LangfuseCallbackHandler가 자동으로 처리됩니다.
  */
+
+import { ChatOpenAI } from "@langchain/openai";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import type { RunnableConfig } from "@langchain/core/runnables";
 
 export interface GLMMessage {
   role: 'system' | 'user' | 'assistant';
@@ -29,125 +33,79 @@ export interface GLMConfig {
 }
 
 export class GLMService {
-  private config: GLMConfig;
-  private textModel: string;
+  private llm: ChatOpenAI;
 
   constructor(config: GLMConfig) {
-    this.config = {
-      ...config,
-      baseURL: config.baseURL || 'https://open.bigmodel.cn/api/paas/v4',
-    };
-    this.textModel = config.textModel || 'glm-4';
+    const modelName = config.textModel || "glm-4";
+    const baseURL = config.baseURL || "https://open.bigmodel.cn/api/paas/v4";
+
+    console.log('[GLM] Initializing ChatOpenAI:', { modelName, baseURL });
+
+    this.llm = new ChatOpenAI({
+      apiKey: config.apiKey,
+      model: modelName,
+      configuration: {
+        baseURL: baseURL,
+      },
+      temperature: 0.7,
+      maxTokens: 4000,
+    });
+
+    console.log('[GLM] ChatOpenAI initialized, model:', (this.llm as any).model || (this.llm as any).modelName);
   }
 
   /**
    * 텍스트만 생성 (GLM 텍스트 모델)
+   * config를 통해 LangfuseCallbackHandler가 자동으로 처리됨
    */
   async generateText(
     systemPrompt: string,
     userPrompt: string,
-    jsonMode: boolean = false
+    config?: RunnableConfig
   ): Promise<string> {
-    const messages: GLMMessage[] = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
+    const messages = [
+      new SystemMessage(systemPrompt),
+      new HumanMessage(userPrompt),
     ];
 
-    const response = await this.callGLM(messages, {
-      model: this.textModel,
-      response_format: jsonMode ? { type: 'json_object' } : undefined,
-    });
-
-    return response.content;
-  }
-
-  /**
-   * GLM API 호출
-   */
-  private async callGLM(
-    messages: Array<{ role: string; content: string | Array<any> }>,
-    options: {
-      model?: string;
-      response_format?: { type: string };
-    } = {}
-  ): Promise<GLMResponse> {
-    const url = `${this.config.baseURL}/chat/completions`;
-
-    const requestBody = {
-      model: options.model || this.textModel,
-      messages,
-      temperature: 0.7,
-      max_tokens: 4000,
-      ...(options.response_format && { response_format: options.response_format }),
-    };
-
-    console.log('[GLM] API 호출:', {
-      url,
-      model: requestBody.model,
+    console.log('[GLM] LangChain API 호출:', {
+      model: (this.llm as any).model || (this.llm as any).modelName,
       messageCount: messages.length,
+      hasConfig: !!config,
+      callbacksType: config?.callbacks?.constructor?.name,
+      handlerCount: config?.callbacks?.handlers?.length || 0,
+      inheritableHandlerCount: config?.callbacks?.inheritableHandlers?.length || 0,
+    });
+    console.log('[GLM] generateText RunnableConfig:', config?.callbacks?.handlers);
+    // console.dir(config, { depth: 5 });
+
+    const response = await this.llm.invoke(messages, config);
+    const content = response.content as string;
+
+    console.log('[GLM] API 응답 성공:', {
+      contentLength: content.length,
     });
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        console.error('[GLM] API 에러:', response.status, error);
-        throw new Error(`GLM API error: ${response.status} - ${error}`);
-      }
-
-      const data = await response.json();
-
-      console.log('[GLM] API 응답 원본 (첫 500자):', JSON.stringify(data).substring(0, 500));
-      console.log('[GLM] API 응답 구조:', {
-        hasChoices: !!data.choices,
-        choicesLength: data.choices?.length,
-        hasMessage: !!data.choices?.[0]?.message,
-        hasContent: !!data.choices?.[0]?.message?.content,
-      });
-
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) {
-        console.error('[GLM] 응답 content가 없음. 전체 응답:', JSON.stringify(data, null, 2));
-        throw new Error('GLM API 응답에 content가 없습니다.');
-      }
-
-      console.log('[GLM] API 응답 성공:', {
-        model: data.model,
-        contentLength: content.length,
-        usage: data.usage,
-      });
-
-      return {
-        content,
-        usage: data.usage,
-      };
-    } catch (error) {
-      console.error('[GLM] Fetch 실패:', error);
-      throw error;
-    }
+    return content;
   }
 
   /**
    * JSON 모드로 생성
+   * config를 통해 LangfuseCallbackHandler가 자동으로 처리됨
    */
   async generateJSON<T>(
     systemPrompt: string,
-    userPrompt: string
+    userPrompt: string,
+    config?: RunnableConfig
   ): Promise<T> {
-    const content = await this.generateText(systemPrompt, userPrompt, true);
+    console.log('[GLM] generateJSON RunnableConfig:', config?.callbacks?.handlers);
+
+    const content = await this.generateText(systemPrompt, userPrompt, config);
     console.log('[GLM] JSON 모드 응답 content:', content);
 
     try {
       const parsed = JSON.parse(content) as T;
-      console.log('[GLM] JSON 파싱 성공:', parsed);
+      console.log('[GLM] JSON 파싱 성공');
       return parsed;
     } catch (e) {
       console.error('[GLM] JSON 파싱 실패:', e);

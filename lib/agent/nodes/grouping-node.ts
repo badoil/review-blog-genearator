@@ -1,13 +1,17 @@
 import type { BlogState } from '../state';
 import type { PhotoGroupingResult, PhotoGroup } from '../../types/photo';
 import { getGLMService } from '../../services/glm.service';
+import type { RunnableConfig } from '@langchain/core/runnables';
 
 /**
  * Grouping Agent Node
  * Photo Analysis를 기반으로 mainItem 기반 그룹핑 수행
  * 같은 mainItem이 2장 이상이면 LLM으로 description 분석 후 그룹핑
  */
-export async function groupingNode(state: BlogState): Promise<Partial<BlogState>> {
+export async function groupingNode(
+  state: BlogState,
+  config?: RunnableConfig
+): Promise<Partial<BlogState>> {
   const { photoAnalysis } = state;
 
   console.log('[Grouping Node] 시작');
@@ -48,7 +52,8 @@ export async function groupingNode(state: BlogState): Promise<Partial<BlogState>
         console.log(`[Grouping Node] ${mainItem} ${indices.length}장 - LLM 그룹핑 시작`);
         const subGroups = await groupByDescription(
           indices.map(idx => images[idx]),
-          mainItem
+          mainItem,
+          config
         );
 
         // 결과를 PhotoGroup으로 변환
@@ -101,7 +106,8 @@ export async function groupingNode(state: BlogState): Promise<Partial<BlogState>
  */
 async function groupByDescription(
   images: Array<{ index: number; description?: string; mainItem?: string }>,
-  mainItem: string
+  mainItem: string,
+  config?: RunnableConfig
 ): Promise<number[][]> {
   const glm = getGLMService();
 
@@ -135,7 +141,7 @@ ${imagesInfo.map((img, i) => `#${img.index}: ${img.description}`).join('\n')}
 중요: JSON 배열 형식으로만 응답해주세요. 설명을 추가하지 마세요.`;
 
   try {
-    const response = await glm.generateText(systemPrompt, userPrompt);
+    const response = await glm.generateText(systemPrompt, userPrompt, config);
 
     // JSON 파싱
     const jsonMatch = response.match(/\[[\s\S]*\]/);

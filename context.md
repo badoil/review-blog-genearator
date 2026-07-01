@@ -40,7 +40,7 @@
 │  │                                                        │   │
 │  │   ┌──────────────┐                                   │   │
 │  │   │ Photo Agent  │ (Gemini)                          │   │
-│  │   │ 이미지 분석  │                                   │   │
+│  │   │ 이미지 분석  │ category, mainItem 추출            │   │
 │  │   └──────┬───────┘                                   │   │
 │  │          │                                            │   │
 │  │   ┌──────▼────────┐                                   │   │
@@ -50,9 +50,16 @@
 │  │   └──────┬─────────┘                                  │   │
 │  │          │ ▼ (병렬 실행 → Promise.all)               │   │
 │  │   ┌──────┴──────────────────┐                        │   │
-│  │   │ Writer Agent             │                        │   │
-│  │   │ 글 생성 + 이미지 배치      │                        │   │
+│  │   │ Grouping Node            │                        │   │
+│  │   │ mainItem 기반 그룹핑       │                        │   │
+│  │   │ (1-3장씩 자연스럽게)      │                        │   │
 │  │   └──────┬───────────────────┘                        │   │
+│  │          │                                            │   │
+│  │   ┌──────▼────────┐                                   │   │
+│  │   │ Writer Agent │ (GLM)                            │   │
+│  │   │ 그룹별 텍스트 생성                                │   │
+│  │   │ (그룹 1개당 섹션 1개)     │                        │   │
+│  │   └──────┬─────────┘                                  │   │
 │  │          │                                            │   │
 │  │   ┌──────▼────────┐                                   │   │
 │  │   │ Reviewer     │ (GLM)                            │   │
@@ -99,6 +106,7 @@ src/
 │   │   └── nodes/
 │   │       ├── photo-agent.ts      # 사진 분석 노드 (Gemini)
 │   │       ├── style-agent.ts      # 스타일 분석 노드 (GLM)
+│   │       ├── grouping-node.ts     # 사진 그룹핑 노드 (GLM)
 │   │       ├── writer-agent.ts     # 글 생성 노드 (GLM)
 │   │       └── reviewer-agent.ts   # 글 검토 노드 (GLM)
 │   │
@@ -128,10 +136,14 @@ export interface BlogState {
   // 입력
   images: UploadedImage[];
   blogUrls: string[];
+  naverBlogId?: string;
 
   // 병렬 실행 결과
   photoAnalysis?: PhotoAnalysis;
   styleProfile?: StyleProfile;
+
+  // Photo Grouping 결과
+  photoGrouping?: PhotoGroupingResult;
 
   // 참고 블로그 내용 (리뷰어에서 비교용)
   referencePosts?: string;
@@ -143,6 +155,7 @@ export interface BlogState {
 
   // 네이버 업로드 결과
   uploadResult?: UploadResult;
+  publishedUrl?: string;
 
   // 에러 처리
   error?: string;
@@ -171,6 +184,8 @@ export interface ImageAnalysis {
   foods: string[];          // 식별된 음식
   time?: string;            // 추정 시간대
   location?: string;        // 구체적 장소 이름
+  category?: 'food' | 'activity' | 'place' | 'transport' | 'other';  // 카테고리
+  mainItem?: string;        // 그룹핑용 단일 키 (예: 타코야끄, 산책, 카페)
 }
 
 export interface PhotoAnalysis {
@@ -188,9 +203,27 @@ export interface TimelineItem {
   activity?: string;
 }
 
+// Photo Grouping 타입
+export interface PhotoGroup {
+  id: string;                    // 그룹 ID (group-1, group-2...)
+  title: string;                 // 그룹 제목
+  description: string;           // 그룹 설명
+  imageIndices: number[];        // 포함된 이미지 인덱스
+  category: string;              // 카테고리
+  mainItem: string;              // 그룹핑 키
+  time?: string;                 // 시간대
+  location?: string;             // 장소
+}
+
+export interface PhotoGroupingResult {
+  groups: PhotoGroup[];          // 그룹 목록 (업로드 순서 유지)
+}
+
 export interface ImagePlacement {
   imageIndex: number;
   position: 'before' | 'after' | 'replace';
+  sectionTitle?: string;        // 섹션 제목 (예: "섹션 1")
+  groupImageIndices?: number[]; // 그룹에 속한 모든 이미지 인덱스
   targetText?: string;
   insertIndex?: number;
 }
@@ -254,6 +287,7 @@ export interface UploadResult {
 
 **출력**:
 - `photoAnalysis`: 장소, 활동, 음식, 분위기, 타임라인
+- 각 이미지별 `category`, `mainItem` 추출 (그룹핑용)
 
 ---
 
@@ -269,11 +303,31 @@ export interface UploadResult {
 
 ---
 
-### 3. Writer Agent (writer-agent.ts)
+### 3. Grouping Node (grouping-node.ts)
 
-**역할**: 사진 분석 + 스타일로 글 생성 + 이미지 배치
+**역할**: mainItem 기반 이미지 그룹핑
+
+**모델**: GLM-5.1 (동일 mainItem이 2장 이상일 때만)
+
+**로직**:
+1. 업로드 순서대로 같은 mainItem끼리 1차 그룹화
+2. 같은 mainItem이 2장 이상이면 LLM으로 description 분석 후 세부 그룹핑
+3. 최종 그룹 크기는 1-3장
+
+**출력**:
+- `photoGrouping`: 그룹 목록
+
+---
+
+### 4. Writer Agent (writer-agent.ts)
+
+**역할**: 그룹별 텍스트 생성 + 이미지 배치
 
 **모델**: GLM-5.1
+
+**로직**:
+- `photoGrouping`이 있으면: 그룹별로 텍스트 생성 (그룹 1개당 섹션 1개)
+- `photoGrouping`이 없으면: 이미지별 섹션 생성 (기존 방식)
 
 **출력**:
 - `draft`: 초안
@@ -281,7 +335,7 @@ export interface UploadResult {
 
 ---
 
-### 4. Reviewer Agent (reviewer-agent.ts)
+### 5. Reviewer Agent (reviewer-agent.ts)
 
 **역할**: 생성된 글을 자연스럽게 다듬기
 
@@ -294,6 +348,8 @@ export interface UploadResult {
 
 ## 병렬 실행 구현
 
+Photo Agent와 Style Agent는 병렬로 실행됩니다:
+
 ```ts
 // graph.ts
 const [photoResult, styleResult] = await Promise.all([
@@ -301,6 +357,8 @@ const [photoResult, styleResult] = await Promise.all([
   styleNode(state).then(result => ({ ...result, nodeName: 'style' })),
 ]);
 ```
+
+이후 순차적으로 Grouping → Writer → Reviewer가 실행됩니다.
 
 ---
 
@@ -345,9 +403,10 @@ GEMINI_MODEL=gemini-2.5-flash
 1. **이미지 업로드**: 여행/맛집 사진 업로드
 2. **블로그 URL 입력**: 기존 블로그 글 2개의 URL 입력 (스타일 분석용)
 3. **블로그 글 생성**:
-   - Photo Agent (Gemini) → 이미지 분석
+   - Photo Agent (Gemini) → 이미지 분석 (category, mainItem 추출)
    - Style Agent (GLM) → 블로그 크롤링 + 스타일 분석 (병렬 실행)
-   - Writer Agent (GLM) → 글 생성 + 이미지 배치
+   - Grouping Node (GLM) → mainItem 기반 그룹핑
+   - Writer Agent (GLM) → 그룹별 텍스트 생성 + 이미지 배치
    - Reviewer Agent (GLM) → 글 검토
 4. **네이버 로그인**: 최초 1회 수동 로그인 → 세션 저장
 5. **네이버 발행**: "네이버 블로그에 발행하기" 클릭 → 자동 발행
@@ -375,3 +434,176 @@ GEMINI_MODEL=gemini-2.5-flash
 ✅ Phase 4: LangGraph 구축 (병렬 실행)
 ✅ Phase 5: 네이버 블로그 업로드 (Playwright + 이미지)
 ✅ Phase 6: UI 구현
+✅ Phase X: Photo Grouping 구현
+   - category, mainItem 추출 (Photo Agent)
+   - Grouping Node 추가 (규칙 기반 그룹핑)
+   - Writer Agent 수정 (그룹별 텍스트 생성)
+   - Graph 구조 변경 (Photo+Style → Grouping → Writer → Reviewer)
+
+
+## Langfuse 연동 (진행중)
+
+LangGraphJS는 Langfuse와 호환됩니다. 연동을 통해 추적 및 모니터링이 가능합니다.
+**Langfuse는 오픈소스로, 무료 티어가 관대하고 셀프 호스팅도 가능합니다.**
+
+### 목표
+
+1. **가시성**: 각 노드와 LLM 호출의 실행 내용 추적
+2. **디버깅**: 문제 발생 시 원인 파악 용이성
+3. **평가**: 생성된 블로그 품질 측정
+4. **최적화**: 비용 및 레이턴시 추적
+
+---
+
+### Phase 1: 패키지 설치 및 환경 변수 설정
+
+**패키지 설치:**
+```bash
+npm install @langfuse/langfuse
+```
+
+**환경 변수 추가 (`.env.local`):**
+```bash
+LANGFUSE_PUBLIC_KEY=your_public_key
+LANGFUSE_SECRET_KEY=your_secret_key
+LANGFUSE_HOST=https://cloud.langfuse.com  # 또는 셀프 호스팅 URL
+LANGFUSE_PROJECT=blog-generator
+```
+
+**Langfuse 키 발급:** https://cloud.langfuse.com (또는 셀프 호스팅 대시보드)
+
+---
+
+### Phase 2: LangGraph에 Tracing 설정 ✅
+
+**목표**: Langfuse 대시보드에서 LangGraph 실행을 시각화
+
+**완료:** `lib/agent/graph.ts`에 LangfuseCallbackHandler 적용
+
+**변경 파일:** `lib/agent/graph.ts`
+
+Langfuse는 LangChain의 Callback Handler 방식으로 통합됩니다:
+
+```ts
+import { LangfuseCallbackHandler } from '@langfuse/langfuse';
+
+// 그래프 실행 시 callback 추가
+export async function generateBlogPost(...) {
+  const langfuse = new LangfuseCallbackHandler();
+
+  const graph = createBlogGraph();
+  const result = await graph.invoke(state, {
+    callbacks: [langfuse],
+  });
+
+  return result;
+}
+```
+
+---
+
+### Phase 3: 병렬 실행 Tracing
+
+**현재 문제점:** Photo/Style 병렬 실행이 `Promise.all`로 그래프 밖에서 수동 구현됨
+
+```ts
+// 현재 graph.ts - 그래프 밖에서 병렬 실행
+const [photoResult, styleResult] = await Promise.all([
+  photoNode(state),
+  styleNode(state),
+]);
+```
+
+**해결 방법:** 병렬 실행을 그래프 내부로 이동하여 Langfuse가 추적할 수 있도록 수정
+
+**옵션 A - 그래프 노드로 추가:**
+```ts
+const graph = new StateGraph(StateAnnotation)
+  .addNode('photo', photoNode)      // 그래프 내부 추가
+  .addNode('style', styleNode)      // 그래프 내부 추가
+  .addNode('grouping', groupingNode)
+  .addNode('writer', writerNode)
+  .addNode('reviewer', reviewerNode);
+
+// START → photo, style (병렬)
+graph.addEdge(START, 'photo');
+graph.addEdge(START, 'style');
+
+// photo, style → grouping (합류)
+graph.addEdge('photo', 'grouping');
+graph.addEdge('style', 'grouping');
+```
+
+---
+
+### Phase 4: LLM 서비스에 메타데이터 추가 (선택)
+
+**목표:** 각 LLM 호출에 의미 있는 태그 추가
+
+**변경 파일:** `lib/services/glm.service.ts`, `lib/services/gemini.service.ts`
+
+**구현 예시:**
+```ts
+// 노드 이름과 태그를 trace에 포함
+const metadata = {
+  node: 'writer-agent',
+  groupId: group.id,
+  imageCount: group.imageIndices.length,
+};
+```
+
+---
+
+### Phase 5: Evaluation 설정 (선택, 고급)
+
+Langfuse는 빌트인 평가 기능을 제공합니다:
+
+**평가 항목:**
+- **Style Consistency**: 스타일 프로필과 생성된 글의 일치성
+- **Image-Text Alignment**: 이미지 분석과 텍스트의 일치성
+- **Coherence**: 글의 논리적 흐름
+- **Length**: 적절한 길이
+
+---
+
+### Phase 6: 셀프 호스팅 (선택)
+
+Docker로 Langfuse 직접 호스팅 가능:
+
+```bash
+git clone https://github.com/langfuse/langfuse
+cd langfuse
+docker-compose up
+```
+
+---
+
+### 구현 순서
+
+1. **Phase 1**: 패키지 설치 + 환경 변수 설정
+2. **Phase 2**: LangGraph에 callback 추가
+3. **Phase 3**: 병렬 실행 tracing (구조 변경 필요)
+4. **Phase 4**: 메타데이터 추가 (선택)
+5. **Phase 5**: Evaluation 구현 (고급, 나중에)
+6. **Phase 6**: 셀프 호스팅 (필요시)
+
+---
+
+### 검증 방법
+
+1. Langfuse 대시보드 접속: https://cloud.langfuse.com (또는 셀프 호스팅 URL)
+2. 프로젝트 선택: `blog-generator`
+3. 블로그 생성 실행
+4. Trace 확인:
+   - 전체 실행 시간
+   - 각 노드별 실행 시간
+   - LLM 호출별 입력/출력
+   - 토큰 사용량
+
+---
+
+### 참고 링크
+
+- Langfuse 문서: https://langfuse.com/docs
+- LangGraph + Langfuse: https://langfuse.com/docs/integrations/langchain/langgraph
+- Langfuse GitHub: https://github.com/langfuse/langfuse

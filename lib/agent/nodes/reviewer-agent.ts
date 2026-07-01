@@ -1,12 +1,16 @@
 import type { BlogState } from '../state';
 import { getGLMService } from '../../services/glm.service';
+import type { RunnableConfig } from '@langchain/core/runnables';
 
 /**
  * Reviewer Agent Node
  * 생성된 글을 검토하여 자연스럽게 다듬고 AI 같은 느낌을 제거
  * 참고 블로그 내용과 비교하여 스타일을 더 잘 반영합니다.
  */
-export async function reviewerNode(state: BlogState): Promise<Partial<BlogState>> {
+export async function reviewerNode(
+  state: BlogState,
+  config?: RunnableConfig
+): Promise<Partial<BlogState>> {
   const { draft, styleProfile, referencePosts } = state;
 
   console.log('[Reviewer Agent] 시작');
@@ -64,7 +68,7 @@ ${referencePosts}
     }
 
     console.log('[Reviewer Agent] 글 검토 요청...');
-    const finalPost = await glm.generateText(systemPrompt, userPrompt);
+    const finalPost = await glm.generateText(systemPrompt, userPrompt, config);
     console.log('[Reviewer Agent] 글 검토 완료 (길이:', finalPost.length, '자)');
 
     return {

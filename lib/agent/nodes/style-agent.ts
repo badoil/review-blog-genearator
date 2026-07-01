@@ -2,12 +2,16 @@ import type { BlogState } from '../state';
 import type { StyleProfile } from '../../types/style';
 import { getGLMService } from '../../services/glm.service';
 import { getStyleCacheService } from '../../services/cache.service';
+import type { RunnableConfig } from '@langchain/core/runnables';
 
 /**
  * Style Agent Node
  * 기존 블로그 글들을 분석하여 사용자의 글쓰기 스타일을 추출
  */
-export async function styleNode(state: BlogState): Promise<Partial<BlogState>> {
+export async function styleNode(
+  state: BlogState,
+  config?: RunnableConfig
+): Promise<Partial<BlogState>> {
   const { blogUrls } = state;
 
   console.log('[Style Agent] 시작, URL 개수:', blogUrls?.length);
@@ -132,7 +136,7 @@ ${blogTexts}
         min: number;
         max: number;
       };
-    }>(systemPrompt, userPrompt);
+    }>(systemPrompt, userPrompt, config);
 
     console.log('[Style Agent] 스타일 분석 완료:');
     console.log('[Style Agent] - 말투(tone):', response.tone);
