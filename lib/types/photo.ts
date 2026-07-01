@@ -19,6 +19,12 @@ export interface ImageAnalysis {
   // Photo Grouping용 필드
   category: 'food' | 'activity' | 'place' | 'transport' | 'other';
   mainItem: string;        // 그룹핑용 단일 키 (예: '타코야끄', '산책', '카페')
+
+  // Scene/View/Focus 기반 그룹핑용 필드
+  scene?: string;          // 장면 (예: "야외 좌석", "건물 외관", "실내 내부", "테이블 위 음식")
+  view?: string;           // 촬영 거리/각도 (예: "전경", "중거리", "클로즈업", "측면")
+  focus?: string;          // 초점 대상 (예: "파라솔", "건물", "음식", "사람", "정원")
+  people?: boolean;        // 사람 포함 여부
 }
 
 // 사진 분석 결과 (전체 + 개별)

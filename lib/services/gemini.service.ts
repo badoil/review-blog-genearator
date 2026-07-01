@@ -16,6 +16,12 @@ export interface ImageAnalysis {
   location?: string;        // 구체적 장소 이름
   category?: 'food' | 'activity' | 'place' | 'transport' | 'other';
   mainItem?: string;        // 그룹핑용 단일 키
+
+  // Scene/View/Focus 기반 그룹핑용 필드
+  scene?: string;          // 장면 (예: "야외 좌석", "건물 외관", "실내 내부", "테이블 위 음식")
+  view?: string;           // 촬영 거리/각도 (예: "전경", "중거리", "클로즈업", "측면")
+  focus?: string;          // 초점 대상 (예: "파라솔", "건물", "음식", "사람", "정원")
+  people?: boolean;        // 사람 포함 여부
 }
 
 export interface PhotoAnalysis {
@@ -109,7 +115,11 @@ export class GeminiService {
       "time": "아침/점심/오후/저녁 (추정 가능한 경우)",
       "location": "구체적 장소 이름 (카페명, 식당명 등)",
       "category": "food|activity|place|transport|other 중 하나",
-      "mainItem": "이 이미지의 대표 항목 (단일 값, 예: 타코야끄, 산책, 카페, 서핑, 버스 등)"
+      "mainItem": "이 이미지의 대표 항목 (단일 값, 예: 타코야끄, 산책, 카페, 서핑, 버스 등)",
+      "scene": "이미지의 주요 장면 (야외 좌석, 건물 외관, 실내 내부, 테이블 위 음식, 인테리어, 메뉴판 등)",
+      "view": "촬영 거리/각도 (전경, 중거리, 클로즈업, 측면, 상하 앵글 등)",
+      "focus": "이미지의 초점 대상 (파라솔, 건물, 음식, 사람, 정원, 간판, 창문 등)",
+      "people": true/false (사람이 포함되어 있는지 여부)
     }
   ],
   "mood": "전체적인 분위기 (예: 여유로움, 활기참, 로맨틱 등)",
@@ -138,11 +148,26 @@ export class GeminiService {
     - category가 activity면: 활동 이름 (예: 산책, 서핑, 대화)
     - category가 place면: 장소 이름 (예: 카페, 해변, 공원)
     - category가 transport면: 이동 수단 (예: 버스, 기차)
+  - scene: 이미지의 주요 장면 분류 (중요: 같은 장소라도 scene이 다르면 반드시 분리해서 분석)
+    - 카페/식당: "야외 좌석", "건물 외관", "실내 내부", "테이블 위 음식", "인테리어 디테일", "메뉴판/간판", "주방/카운터", "입구/현관"
+    - 자연/야외: "해변/바다", "산/등산로", "공원/정원", "길거리", "야경/밤하늘"
+    - 활동: "음식점에서 식사", "걷기/산책", "운동/놀이", "대화/휴식", "쇼핑"
+    - 이동: "버스/기차 내부", "역/정류장", "도로/고속도로"
+  - view: 촬영 거리/각도 분류
+    - "전경": 전체 상황이 다 보임 (건물 전체, 방 전체)
+    - "중거리": 주요 대상과 배경이 함께 보임 (테이블 위 음식 + 뒷배경)
+    - "클로즈업": 특정 대상에 근접 (음식 디테일, 사람 얼굴)
+    - "측면": 옆에서 촬영
+    - "상면 앵글": 아래서 위로 촬영
+    - "하면 앵글": 위에서 아래로 촬영
+  - focus: 이미지의 가장 중요한 대상 하나 (예: 파라솔, 건물, 음식, 사람, 정원, 간판, 차량 등)
+  - people: 사람이 보이면 true, 아니면 false (얼굴이 안 보여도 사람의 모습이 보이면 true)
 - mood: 전체 사진의 분위기를 한 단어로 표현
 - timeline: 이미지 순서에 따른 동선 추정
 
 중요: 이미지 업로드 순서대로 index를 ${startIndex}, ${startIndex + 1}... 로 부여하세요.
-중요: category와 mainItem은 반드시 포함해야 합니다.`;
+중요: category, mainItem, scene, view, focus, people은 반드시 포함해야 합니다.
+중요: 같은 장소의 사진이라도 scene이 다르면 반드시 분리해서 분석해주세요.`;
 
     // 이미지 파트 준비
     const imageParts = batch.map((img, idx) => {

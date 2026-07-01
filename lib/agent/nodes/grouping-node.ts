@@ -1,12 +1,11 @@
 import type { BlogState } from '../state';
 import type { PhotoGroupingResult, PhotoGroup } from '../../types/photo';
-import { getGLMService } from '../../services/glm.service';
 import type { RunnableConfig } from '@langchain/core/runnables';
 
 /**
  * Grouping Agent Node
- * Photo Analysis를 기반으로 mainItem 기반 그룹핑 수행
- * 같은 mainItem이 2장 이상이면 LLM으로 description 분석 후 그룹핑
+ * Photo Analysis를 기반으로 mainItem 기반 1차 그룹핑 후
+ * scene/view/focus 기반 2차 그룹핑 수행 (규칙 기반, LLM 없음)
  */
 export async function groupingNode(
   state: BlogState,
@@ -28,6 +27,13 @@ export async function groupingNode(
     index: i,
     imgIndex: img.index,
     description: img.description,
+    mainItem: img.mainItem,
+    scene: img.scene,
+    view: img.view,
+    focus: img.focus,
+    category: img.category,
+    time: img.time,
+    location: img.location
   })));
 
   try {
@@ -47,14 +53,14 @@ export async function groupingNode(
       console.log(`  ${mainItem}: ${indices.length}장 [${indices.join(', ')}]`);
     });
 
-    // 2. 같은 mainItem이 2장 이상이면 LLM으로 세부 그룹핑
+    // 2. 같은 mainItem이 2장 이상이면 scene/view/focus 기반 세부 그룹핑
     const finalGroups: PhotoGroup[] = [];
     let groupIndex = 0;
 
     for (const [mainItem, indices] of preliminaryGroups) {
       if (indices.length >= 2) {
-        // LLM으로 description 기반 그룹핑
-        console.log(`[Grouping Node] ${mainItem} ${indices.length}장 - LLM 그룹핑 시작`);
+        // scene/view/focus 기반 규칙형 그룹핑
+        console.log(`[Grouping Node] ${mainItem} ${indices.length}장 - scene/view/focus 기반 그룹핑 시작`);
         const imagesForGrouping = indices
           .map(idx => images[idx])
           .filter((img): img is Exclude<typeof img, undefined> => img != null);
@@ -68,10 +74,9 @@ export async function groupingNode(
 
         console.log(`[Grouping Node] 유효한 인덱스:`, validIndices);
 
-        const subGroups = await groupByDescription(
+        const subGroups = groupByScene(
           imagesForGrouping,
-          mainItem,
-          config
+          mainItem
         );
 
         // 결과를 PhotoGroup으로 변환
@@ -128,82 +133,99 @@ export async function groupingNode(
 }
 
 /**
- * LLM으로 description 기반 그룹핑
+ * Scene/View/Focus 기반 규칙형 그룹핑
  *
- * 중요: 입력된 images 배열의 상대적 위치(0, 1, 2...)를 사용하여 그룹핑합니다.
- * 반환값은 호출 시점의 images 배열 인덱스(상대 인덱스)입니다.
+ * LLM 호출 없이 scene, view, focus 필드를 기반으로 규칙 기반 그룹핑 수행
+ * 입력된 images 배열의 상대적 위치(0, 1, 2...)를 사용하여 그룹핑합니다.
  */
-async function groupByDescription(
-  images: Array<{ index: number; description?: string; mainItem?: string }>,
-  mainItem: string,
-  config?: RunnableConfig
-): Promise<number[][]> {
-  const glm = getGLMService();
-
-  console.log('[Grouping Node] groupByDescription 호출:');
+function groupByScene(
+  images: Array<{
+    index: number;
+    scene?: string;
+    view?: string;
+    focus?: string;
+    mainItem?: string;
+    description?: string;
+  }>,
+  mainItem: string
+): number[][] {
+  console.log('[Grouping Node] groupByScene 호출:');
   console.log('  - mainItem:', mainItem);
   console.log('  - images.length:', images.length);
-  console.log('  - 입력된 images의 img.index:', images.map((img, i) => ({ arrayIdx: i, imgIndex: img.index })));
 
-  const systemPrompt = `당신은 사진 그룹핑 전문가입니다.
-주어진 사진들의 description을 보고, **1-3장씩** 자연스럽게 그룹화해주세요.
-같은 description이거나 비슷한 상황/컨텍스트의 사진들을 같은 그룹으로 묶으세요.
+  // Step 1: scene 기반 그룹화
+  const sceneGroups: Map<string, number[]> = new Map();
 
-**중요:**
-- 한 그룹은 1~3장으로 구성하세요
-- description이 다르면 분리하세요 (예: "조리 중" vs "완성된 접시")
-- 업로드 순서를 유지하세요`;
+  images.forEach((img, idx) => {
+    const scene = img.scene || 'unknown';
+    const key = `${mainItem}:${scene}`;
 
-  // 상대적 인덱스(0, 1, 2...)를 사용하여 LLM에 요청
-  const validImages = images.filter(img => img != null);
-  const userPrompt = `다음 ${validImages.length}장의 사진을 1-3장씩 자연스럽게 그룹화해주세요.
-
-메인 아이템: ${mainItem}
-
-사진 정보:
-${validImages.map((img, i) => `#${i}: ${img.description || ''}`).join('\n')}
-
-**출력 형식 (JSON만):**
-[
-  [0, 1],    // 그룹 1: 상대 인덱스 0, 1 (첫 번째, 두 번째 사진)
-  [2, 3]     // 그룹 2: 상대 인덱스 2, 3 (세 번째, 네 번째 사진)
-]
-
-중요:
-- JSON 배열 형식으로만 응답해주세요. 설명을 추가하지 마세요.
-- 반드시 0부터 시작하는 상대적 인덱스를 사용하세요.`;
-
-  try {
-    const response = await glm.generateText(systemPrompt, userPrompt, config);
-
-    // JSON 파싱
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      throw new Error('JSON 응답을 찾을 수 없습니다.');
+    if (!sceneGroups.has(key)) {
+      sceneGroups.set(key, []);
     }
+    sceneGroups.get(key)!.push(idx);
+  });
 
-    const groups = JSON.parse(jsonMatch[0]) as number[][];
+  console.log('[Grouping Node] scene 기반 그룹화 결과:');
+  sceneGroups.forEach((indices, key) => {
+    console.log(`  ${key}: ${indices.length}장 [${indices.join(', ')}]`);
+  });
 
-    console.log('[Grouping Node] LLM 그룹핑 결과 (상대 인덱스):', groups);
-    console.log('[Grouping Node] 반환값은 입력 images 배열의 인덱스입니다');
+  // Step 2: view/focus 기반 최종 병합
+  const finalGroups: number[][] = [];
 
-    // 상대 인덱스를 그대로 반환 (호출하는 쪽에서 사용)
-    return groups;
-  } catch (error) {
-    console.error('[Grouping Node] LLM 그룹핑 실패, 기본 그룹핑 사용:', error);
-    // 실패하면 기본적으로 3장씩 분할 (상대 인덱스 반환)
-    const groups: number[][] = [];
-    for (let i = 0; i < validImages.length; i += 3) {
-      const group: number[] = [];
-      for (let j = 0; j < 3 && i + j < validImages.length; j++) {
-        group.push(i + j);  // 상대 인덱스 사용
-      }
-      if (group.length > 0) {
-        groups.push(group);
-      }
+  sceneGroups.forEach((indices) => {
+    if (indices.length === 1) {
+      finalGroups.push(indices);
+    } else {
+      const subGroups = mergeByViewAndFocus(images, indices);
+      finalGroups.push(...subGroups);
     }
-    return groups;
+  });
+
+  console.log('[Grouping Node] 최종 그룹핑 결과 (상대 인덱스):', finalGroups);
+  return finalGroups;
+}
+
+/**
+ * 같은 scene 내에서 view/focus 기반 병합/분리
+ * 인접한 이미지들의 view와 focus를 비교하여 병합 여부 결정
+ */
+function mergeByViewAndFocus(
+  images: Array<{
+    view?: string;
+    focus?: string;
+  }>,
+  indices: number[]
+): number[][] {
+  const groups: number[][] = [];
+  let currentGroup: number[] = [indices[0]];
+
+  for (let i = 1; i < indices.length; i++) {
+    const prevImg = images[indices[i - 1]];
+    const currImg = images[indices[i]];
+
+    // view나 focus가 다르면 분리
+    const viewMatch = prevImg.view === currImg.view;
+    const focusMatch = prevImg.focus === currImg.focus;
+
+    if (!viewMatch || !focusMatch) {
+      // 분리
+      groups.push(currentGroup);
+      currentGroup = [indices[i]];
+      console.log(`[Grouping Node] 분리: idx${indices[i - 1]} vs idx${indices[i]} (view: ${prevImg.view}→${currImg.view}, focus: ${prevImg.focus}→${currImg.focus})`);
+    } else {
+      // 병합
+      currentGroup.push(indices[i]);
+      console.log(`[Grouping Node] 병합: idx${indices[i - 1]} + idx${indices[i]} (view: ${prevImg.view}, focus: ${prevImg.focus})`);
+    }
   }
+
+  if (currentGroup.length > 0) {
+    groups.push(currentGroup);
+  }
+
+  return groups;
 }
 
 /**
