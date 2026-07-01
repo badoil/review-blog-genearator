@@ -101,15 +101,35 @@ export class GLMService {
     console.log('[GLM] generateJSON RunnableConfig:', config?.callbacks?.handlers);
 
     const content = await this.generateText(systemPrompt, userPrompt, config);
-    console.log('[GLM] JSON 모드 응답 content:', content);
+    console.log('[GLM] JSON 모드 응답 content (길이:', content.length, ')');
+
+    // 마크다운 코드 블록 제거
+    let jsonContent = content;
+
+    // ```json ... ``` 형식 처리
+    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      jsonContent = jsonMatch[1];
+      console.log('[GLM] 마크다운 코드 블록 감지, 제거 완료');
+    } else {
+      // ``` ... ``` 형식 처리
+      const codeMatch = content.match(/```\s*([\s\S]*?)\s*```/);
+      if (codeMatch) {
+        jsonContent = codeMatch[1];
+        console.log('[GLM] 마크다운 코드 블록 감지 (json 없음), 제거 완료');
+      }
+    }
+
+    console.log('[GLM] 파싱할 JSON (미리보기):', jsonContent.substring(0, 200));
 
     try {
-      const parsed = JSON.parse(content) as T;
+      const parsed = JSON.parse(jsonContent) as T;
       console.log('[GLM] JSON 파싱 성공');
       return parsed;
     } catch (e) {
       console.error('[GLM] JSON 파싱 실패:', e);
-      throw new Error(`JSON 파싱 실패: ${content}`);
+      console.error('[GLM] 실패한 내용 (500자):', jsonContent.substring(0, 500));
+      throw new Error(`JSON 파싱 실패: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 }

@@ -36,6 +36,7 @@ export default function Home() {
   // 기존 상태
   const [blogUrls, setBlogUrls] = useState(['', '']);
   const [images, setImages] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<Map<number, string>>(new Map()); // 이미지 미리보기 URL
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -169,13 +170,77 @@ export default function Home() {
   };
 
   // 이미지 업로드 처리
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    setImages((prev) => [...prev, ...files]);
+    const startIndex = images.length;
+
+    // HEIC 파일을 JPEG로 변환
+    const processedFiles = await Promise.all(
+      files.map(async (file, index) => {
+        // HEIC 파일 확인
+        if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
+          try {
+            // heic2any로 변환 (다이나믹 임포트)
+            const heic2any = await import('heic2any');
+            const blob = await heic2any.default({
+              blob: file,
+              toType: 'image/jpeg',
+              quality: 0.8,
+            }) as Blob;
+
+            // 변환된 Blob을 File로 변환
+            const convertedFile = new File([blob], file.name.replace(/\.heic$/i, '.jpg'), {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+
+            // 미리보기 URL 생성
+            const previewUrl = URL.createObjectURL(convertedFile);
+            setImagePreviews((prev) => new Map(prev).set(startIndex + index, previewUrl));
+
+            return convertedFile;
+          } catch (error) {
+            console.error('HEIC 변환 실패:', error);
+            // 변환 실패 시 원본 파일 사용
+            return file;
+          }
+        }
+
+        // HEIC가 아닌 파일은 그대로 사용
+        const previewUrl = URL.createObjectURL(file);
+        setImagePreviews((prev) => new Map(prev).set(startIndex + index, previewUrl));
+        return file;
+      })
+    );
+
+    setImages((prev) => [...prev, ...processedFiles]);
   };
 
   // 이미지 제거
   const removeImage = (index: number) => {
+    // 미리보기 URL 해제
+    const previewUrl = imagePreviews.get(index);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setImagePreviews((prev) => {
+        const newMap = new Map(prev);
+        newMap.delete(index);
+        return newMap;
+      });
+    }
+
+    // 인덱스 조정
+    const newMap = new Map<number, string>();
+    let idx = 0;
+    for (const [i, url] of imagePreviews) {
+      if (i < index) {
+        newMap.set(idx++, url);
+      } else if (i > index) {
+        newMap.set(idx++, url);
+      }
+    }
+    setImagePreviews(newMap);
+
     setImages((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -465,7 +530,7 @@ export default function Home() {
                 {images.map((img, index) => (
                   <div key={index} className="relative group">
                     <img
-                      src={URL.createObjectURL(img)}
+                      src={imagePreviews.get(index) || URL.createObjectURL(img)}
                       alt={`upload ${index}`}
                       className="w-full h-32 object-cover rounded"
                     />

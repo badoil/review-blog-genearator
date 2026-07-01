@@ -16,30 +16,6 @@ function renderContentWithImages(
     return content;
   }
 
-  // imagePlacements가 없으면 이미지를 섹션 순서대로 배치
-  if (!imagePlacements || imagePlacements.length === 0) {
-    // 간단한 경우: 이미지를 섹션별로 배치
-    const lines = content.split('\n');
-    let html = '';
-    let sectionIndex = 0;
-
-    lines.forEach((line) => {
-      html += line + '\n';
-
-      // 섹션 시작 패턴을 감지하면 해당 섹션에 이미지를 먼저 추가
-      if (line.match(/^(?:\[)?섹션\s+\d+/) || line.match(/^#\s+/)) {
-        // 첫 번째 #는 제목이므로 이미지를 추가하지 않음
-        if (!line.match(/^#\s+/) && sectionIndex < images.length) {
-          const img = images[sectionIndex];
-          html += `\n<img src="${img.base64}" alt="블로그 이미지" style="max-width: 200px !important; width: 100% !important; height: auto !important; object-fit: contain !important; border-radius: 12px !important; margin: 16px auto !important; display: block !important;" />\n\n`;
-          sectionIndex++;
-        }
-      }
-    });
-
-    return html;
-  }
-
   // imagePlacements가 있는 경우: 섹션별 이미지 배치
   if (imagePlacements && imagePlacements.length > 0) {
     console.log('[renderContentWithImages] imagePlacements 사용하여 섹션별 배치:', imagePlacements);
@@ -49,8 +25,6 @@ function renderContentWithImages(
     let placementIndex = 0;
 
     lines.forEach((line) => {
-      html += line + '\n';
-
       // 섹션 시작 패턴 감지 (볼드, 대괄호 모두 지원)
       if (line.match(/섹션\s+\d+:/) && placementIndex < imagePlacements.length) {
         const placement = imagePlacements[placementIndex];
@@ -69,29 +43,31 @@ function renderContentWithImages(
         html += `\n<div class="group-images" style="text-align: center; margin: 16px 0;">\n${groupImagesHtml}\n</div>\n\n`;
         placementIndex++;
       }
+
+      // 섹션 텍스트 추가 (이미지 후에)
+      html += line + '\n';
     });
 
     return html;
   }
 
-  // imagePlacements가 없고 섹션 마커가 있는 경우: 섹션별 이미지 매핑
+  // imagePlacements가 없으면 이미지를 섹션 순서대로 배치
   const lines = content.split('\n');
   let html = '';
-  let sectionCount = 0;
+  let sectionIndex = 0;
 
   lines.forEach((line) => {
-    html += line + '\n';
-
-    // 섹션 시작 패턴 감지 (대괄호 선택적)
+    // 섹션 시작 패턴을 감지하면 해당 섹션에 이미지를 먼저 추가
     if (line.match(/^(?:\[)?섹션\s+\d+/)) {
-      sectionCount++;
-      // 해당 섹션에 이미지 추가 (섹션 1 → 이미지 0)
-      const imageIdx = sectionCount - 1;
-      if (imageIdx < images.length) {
-        const img = images[imageIdx];
+      if (sectionIndex < images.length) {
+        const img = images[sectionIndex];
         html += `\n<img src="${img.base64}" alt="블로그 이미지" style="max-width: 200px !important; width: 100% !important; height: auto !important; object-fit: contain !important; border-radius: 12px !important; margin: 16px auto !important; display: block !important;" />\n\n`;
+        sectionIndex++;
       }
     }
+
+    // 섹션 텍스트 추가 (이미지 후에)
+    html += line + '\n';
   });
 
   return html;
