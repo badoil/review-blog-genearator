@@ -17,7 +17,7 @@ export async function writerNode(
   console.log('[Writer Agent] 시작');
   console.log('[Writer Agent] 업로드된 이미지 개수:', images?.length || 0);
   console.log('[Writer Agent] 그룹핑 여부:', photoGrouping ? '있음' : '없음');
-  console.log('[Writer Agent] RunnableConfig', config?.callbacks?.handlers);
+  // console.log('[Writer Agent] RunnableConfig', config?.callbacks?.handlers);
   // console.dir(config, { depth: 5 });
 
   // 그룹핑이 있으면 그룹별 텍스트 생성

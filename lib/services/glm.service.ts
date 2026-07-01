@@ -68,15 +68,15 @@ export class GLMService {
       new HumanMessage(userPrompt),
     ];
 
-    console.log('[GLM] LangChain API 호출:', {
-      model: (this.llm as any).model || (this.llm as any).modelName,
-      messageCount: messages.length,
-      hasConfig: !!config,
-      callbacksType: config?.callbacks?.constructor?.name,
-      handlerCount: config?.callbacks?.handlers?.length || 0,
-      inheritableHandlerCount: config?.callbacks?.inheritableHandlers?.length || 0,
-    });
-    console.log('[GLM] generateText RunnableConfig:', config?.callbacks?.handlers);
+    // console.log('[GLM] LangChain API 호출:', {
+    //   model: (this.llm as any).model || (this.llm as any).modelName,
+    //   messageCount: messages.length,
+    //   hasConfig: !!config,
+    //   callbacksType: config?.callbacks?.constructor?.name,
+    //   handlerCount: config?.callbacks?.handlers?.length || 0,
+    //   inheritableHandlerCount: config?.callbacks?.inheritableHandlers?.length || 0,
+    // });
+    // console.log('[GLM] generateText RunnableConfig:', config?.callbacks?.handlers);
     // console.dir(config, { depth: 5 });
 
     const response = await this.llm.invoke(messages, config);
@@ -98,7 +98,7 @@ export class GLMService {
     userPrompt: string,
     config?: RunnableConfig
   ): Promise<T> {
-    console.log('[GLM] generateJSON RunnableConfig:', config?.callbacks?.handlers);
+    // console.log('[GLM] generateJSON RunnableConfig:', config?.callbacks?.handlers);
 
     const content = await this.generateText(systemPrompt, userPrompt, config);
     console.log('[GLM] JSON 모드 응답 content (길이:', content.length, ')');
