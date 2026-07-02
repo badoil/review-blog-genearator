@@ -1,0 +1,129 @@
+{
+  "data": {
+    "images": [
+      {
+        "index": 0,
+        "description": "카페 'THE CORNER'의 주문 카운터와 음료 메뉴판을 보여주는 실내 사진입니다. 한 바리스타가 음료를 준비하고 있습니다.",
+        "places": [
+          "카페"
+        ],
+        "activities": [
+          "음료 준비"
+        ],
+        "foods": [
+          "말차 라떼",
+          "아메리카노",
+          "스트로베리 말차 라떼"
+        ],
+        "time": "점심",
+        "location": "THE CORNER",
+        "category": "food",
+        "mainItem": "메뉴판",
+        "scene": "주방/카운터",
+        "view": "중거리",
+        "focus": "메뉴판",
+        "people": true
+      },
+      {
+        "index": 1,
+        "description": "카페 'THE CORNER'의 실내 좌석 공간을 보여주는 사진입니다. 창밖으로 푸른 나무들이 보이며, 몇몇 손님들이 편안하게 앉아 휴식을 취하고 있습니다.",
+        "places": [
+          "카페"
+        ],
+        "activities": [
+          "휴식",
+          "앉아있기"
+        ],
+        "foods": [],
+        "time": "오후",
+        "location": "THE CORNER",
+        "category": "place",
+        "mainItem": "카페 실내",
+        "scene": "실내 내부",
+        "view": "전경",
+        "focus": "실내 좌석",
+        "people": true
+      },
+      {
+        "index": 4,
+        "description": "다양한 식물과 자연광으로 꾸며진 밝은 카페 내부 전경으로, 여러 손님들이 개별 테이블에서 각자의 시간을 보내고 있다.",
+        "places": [
+          "카페"
+        ],
+        "activities": [
+          "작업",
+          "휴식",
+          "음료 마시기"
+        ],
+        "foods": [
+          "음료"
+        ],
+        "time": "오후",
+        "location": "카페",
+        "category": "place",
+        "mainItem": "카페",
+        "scene": "실내 내부",
+        "view": "중거리",
+        "focus": "카페 인테리어",
+        "people": true
+      },
+      {
+        "index": 5,
+        "description": "같은 카페의 다른 각도에서 촬영된 이미지로, 중앙의 커다란 나무와 창가에 앉아 노트북을 사용하거나 책을 보는 손님들이 보인다.",
+        "places": [
+          "카페"
+        ],
+        "activities": [
+          "작업",
+          "독서",
+          "휴식"
+        ],
+        "foods": [],
+        "time": "오후",
+        "location": "카페",
+        "category": "place",
+        "mainItem": "카페",
+        "scene": "실내 내부",
+        "view": "중거리",
+        "focus": "카페 인테리어",
+        "people": true
+      }
+    ],
+    "places": [
+      "카페"
+    ],
+    "activities": [
+      "음료 준비",
+      "휴식",
+      "앉아있기",
+      "작업",
+      "음료 마시기",
+      "독서"
+    ],
+    "foods": [
+      "말차 라떼",
+      "아메리카노",
+      "스트로베리 말차 라떼",
+      "음료"
+    ],
+    "mood": "여유로움",
+    "timeline": [
+      {
+        "time": "점심",
+        "location": "THE CORNER",
+        "activity": "음료 주문 및 준비"
+      },
+      {
+        "time": "오후",
+        "location": "THE CORNER",
+        "activity": "카페에서 휴식"
+      },
+      {
+        "time": "오후",
+        "location": "카페",
+        "activity": "카페에서 휴식 및 작업"
+      }
+    ]
+  },
+  "timestamp": 1782910625190
+}

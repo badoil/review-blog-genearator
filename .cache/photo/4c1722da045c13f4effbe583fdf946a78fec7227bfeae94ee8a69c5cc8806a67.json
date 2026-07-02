@@ -1,0 +1,114 @@
+{
+  "data": {
+    "images": [
+      {
+        "index": 0,
+        "description": "다수의 흰색 테이블과 의자가 정돈된 야외 카페 좌석 공간으로, 하얀색 술이 달린 파라솔과 나무, 푸른 관목들이 어우러져 시원하고 아늑한 분위기를 연출하고 있습니다.",
+        "places": [
+          "야외 카페",
+          "정원"
+        ],
+        "activities": [],
+        "foods": [],
+        "time": "오후",
+        "location": "야외 카페 (불특정)",
+        "category": "place",
+        "mainItem": "야외 카페 좌석",
+        "scene": "야외 좌석",
+        "view": "중거리",
+        "focus": "야외 카페 좌석",
+        "people": false
+      },
+      {
+        "index": 1,
+        "description": "야외 카페 좌석에 두 명의 손님이 앉아 음료를 마시며 여유로운 시간을 보내고 있습니다. 주변에는 푸른 나무와 관목, 그리고 여러 개의 하얀색 파라솔이 보입니다.",
+        "places": [
+          "야외 카페",
+          "정원"
+        ],
+        "activities": [
+          "식사",
+          "대화",
+          "휴식"
+        ],
+        "foods": [
+          "음료"
+        ],
+        "time": "오후",
+        "location": "야외 카페 (불특정)",
+        "category": "activity",
+        "mainItem": "야외 식사/대화",
+        "scene": "음식점에서 식사",
+        "view": "중거리",
+        "focus": "식사하는 사람들",
+        "people": true
+      },
+      {
+        "index": 4,
+        "description": "울창한 나무들 사이에 위치한 카페의 야외 좌석 풍경입니다. 여러 개의 하얀 파라솔 아래 테이블과 의자가 배치되어 있으며, 한 쌍의 커플이 앉아 대화하고 있습니다.",
+        "places": [
+          "카페 야외 좌석",
+          "정원"
+        ],
+        "activities": [
+          "대화",
+          "휴식"
+        ],
+        "foods": [],
+        "time": "오후",
+        "location": "카페 (야외 공간)",
+        "category": "place",
+        "mainItem": "카페",
+        "scene": "야외 좌석",
+        "view": "중거리",
+        "focus": "카페 야외 좌석",
+        "people": true
+      },
+      {
+        "index": 5,
+        "description": "현대적인 건물 옆에 자리한 카페의 또 다른 야외 좌석 공간입니다. 줄무늬와 패턴이 있는 하얀 파라솔과 하얀색 의자, 테이블이 보이며, 주변에는 푸른 식물들이 어우러져 있습니다.",
+        "places": [
+          "카페 야외 좌석",
+          "정원"
+        ],
+        "activities": [],
+        "foods": [],
+        "time": "오후",
+        "location": "카페 (야외 공간)",
+        "category": "place",
+        "mainItem": "카페",
+        "scene": "야외 좌석",
+        "view": "중거리",
+        "focus": "파라솔",
+        "people": false
+      }
+    ],
+    "places": [
+      "야외 카페",
+      "정원",
+      "카페 야외 좌석"
+    ],
+    "activities": [
+      "식사",
+      "대화",
+      "휴식"
+    ],
+    "foods": [
+      "음료"
+    ],
+    "mood": "여유로움",
+    "timeline": [
+      {
+        "time": "오후",
+        "location": "야외 카페",
+        "activity": "휴식 및 식사"
+      },
+      {
+        "time": "오후",
+        "location": "카페 (야외 공간)",
+        "activity": "야외 좌석에서 휴식 및 대화"
+      }
+    ]
+  },
+  "timestamp": 1782910130184
+}

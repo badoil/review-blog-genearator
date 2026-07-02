@@ -33,10 +33,21 @@ export async function styleNode(
     const cached = await styleCache.get(cacheKey);
     if (cached) {
       console.log('[Style Agent] 캐시된 결과 사용');
-      return {
-        styleProfile: cached,
-        referencePosts: cached.referencePosts || '', // 필요시 참고 블로그 내용도 포함
-      };
+      // 캐시된 데이터가 referencePosts를 포함하는지 확인 (이전 캐시 호환성)
+      const hasReferencePosts = cached.referencePosts && typeof cached.referencePosts === 'string';
+      if (hasReferencePosts) {
+        console.log('[Style Agent] 캐시에 referencePosts 포함됨');
+        return {
+          styleProfile: cached.styleProfile || cached, // 이전 캐시 호환성
+          referencePosts: cached.referencePosts,
+        };
+      } else {
+        console.log('[Style Agent] 캐시에 referencePosts 없음 (구형 캐시)');
+        return {
+          styleProfile: cached.styleProfile || cached,
+          referencePosts: '', // 구형 캐시는 빈 문자열
+        };
+      }
     }
 
     console.log('[Style Agent] 캐시 미스, 스타일 분석 시작...');
@@ -162,8 +173,8 @@ ${blogTexts}
       referencePosts: blogTexts, // 참고 블로그 내용 저장 (리뷰어에서 비교용)
     };
 
-    // 캐시 저장
-    await styleCache.set(cacheKey, styleResult.styleProfile);
+    // 캐시 저장 (referencePosts 포함)
+    await styleCache.set(cacheKey, styleResult);
 
     return styleResult;
   } catch (error) {

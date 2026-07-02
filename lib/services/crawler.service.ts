@@ -22,7 +22,7 @@ let storedCookies: any[] | null = null;
  */
 export function setNaverCookies(cookies: any[]) {
   storedCookies = cookies;
-  console.log('[Crawler] 세션 쿠키 설정 완료:', cookies.length, '개');
+  // console.log('[Crawler] 세션 쿠키 설정 완료:', cookies.length, '개');
 }
 
 export class CrawlerService {
@@ -39,7 +39,7 @@ export class CrawlerService {
       throw new Error('네이버 블로그 URL이 아닙니다.');
     }
 
-    console.log('[Crawler] Playwright로 블로그 크롤링 시작:', url, useSession ? '(세션 사용)' : '(세션 없음)');
+    // console.log('[Crawler] Playwright로 블로그 크롤링 시작:', url, useSession ? '(세션 사용)' : '(세션 없음)');
 
     // 브라우저 런치
     const browser = await chromium.launch();
@@ -50,20 +50,20 @@ export class CrawlerService {
     // 저장된 쿠키 적용 (세션 사용 시)
     if (useSession && storedCookies) {
       await context.addCookies(storedCookies);
-      console.log('[Crawler] 저장된 쿠키 적용 완료');
+      // console.log('[Crawler] 저장된 쿠키 적용 완료');
     }
 
     const page = await context.newPage();
 
     try {
       // 페이지 로드 (JavaScript 렌더링 대기 - 더 길게)
-      console.log('[Crawler] 페이지 로드 시작...');
+      // console.log('[Crawler] 페이지 로드 시작...');
       await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
 
       // 네이버 블로그는 iframe을 사용하므로 iframe 찾기
-      console.log('[Crawler] 페이지 내 모든 iframe 확인...');
+      // console.log('[Crawler] 페이지 내 모든 iframe 확인...');
       const frames = page.frames();
-      console.log('[Crawler] 발견된 frame 개수:', frames.length);
+      // console.log('[Crawler] 발견된 frame 개수:', frames.length);
 
       // 네이버 블로그 본문이 있는 frame 찾기
       let targetFrame = page.mainFrame();
@@ -71,11 +71,11 @@ export class CrawlerService {
 
       for (const frame of frames) {
         const frameUrl = frame.url();
-        console.log('[Crawler] Frame URL:', frameUrl);
+        // console.log('[Crawler] Frame URL:', frameUrl);
 
         // 본문 frame은 보통 blog.naver.com/PostView.nhn 등의 URL을 가짐
         if (frameUrl && (frameUrl.includes('PostView') || frameUrl.includes('post') || frameUrl.includes('blog.naver.com'))) {
-          console.log('[Crawler] 본문 frame 발견:', frameUrl);
+          // console.log('[Crawler] 본문 frame 발견:', frameUrl);
           targetFrame = frame;
           foundIframe = true;
           break;
@@ -83,27 +83,27 @@ export class CrawlerService {
       }
 
       // frame 렌더링 대기
-      console.log('[Crawler] frame 렌더링 대기 중...');
+      // console.log('[Crawler] frame 렌더링 대기 중...');
       await targetFrame.waitForLoadState('networkidle').catch(() => {
-        console.log('[Crawler] networkidle timeout, 계속 진행');
+        // console.log('[Crawler] networkidle timeout, 계속 진행');
       });
       await targetFrame.waitForTimeout(2000);
 
       // 네이버 블로그는 중첩된 iframe 구조 (frame → mainFrame → 본문)
       // 제목은 outer frame에서, 본문은 중첩 frame에서 가져오기
-      console.log('[Crawler] 중첩 iframe 확인...');
+      // console.log('[Crawler] 중첩 iframe 확인...');
 
       // 제목은 outer frame의 title 태그에서 추출
       const outerTitle = await targetFrame.evaluate(() => {
         return document.title || '';
       });
-      console.log('[Crawler] outer frame title:', outerTitle);
+      // console.log('[Crawler] outer frame title:', outerTitle);
 
       const nestedIframe = await targetFrame.$('iframe#mainFrame');
       let contentHtml = '';
 
       if (nestedIframe) {
-        console.log('[Crawler] 중첩 mainFrame 발견, 내부로 접근...');
+        // console.log('[Crawler] 중첩 mainFrame 발견, 내부로 접근...');
         const nestedFrame = await nestedIframe.contentFrame();
         if (nestedFrame) {
           // 중첩 frame 렌더링 대기
@@ -116,15 +116,15 @@ export class CrawlerService {
           contentHtml = await nestedFrame.evaluate(() => {
             return document.body?.innerHTML || document.documentElement?.outerHTML || '';
           });
-          console.log('[Crawler] 중첩 frame 내부 HTML 길이:', contentHtml.length);
+          // console.log('[Crawler] 중첩 frame 내부 HTML 길이:', contentHtml.length);
         } else {
-          console.warn('[Crawler] 중첩 frame 접근 실패');
+          // console.warn('[Crawler] 중첩 frame 접근 실패');
           contentHtml = await targetFrame.evaluate(() => {
             return document.body?.innerHTML || '';
           });
         }
       } else {
-        console.log('[Crawler] 중첩 iframe 없음, 현재 frame 사용');
+        // console.log('[Crawler] 중첩 iframe 없음, 현재 frame 사용');
 
         // 구조 분석
         await this.analyzeNaverBlogStructure(targetFrame);
@@ -134,11 +134,11 @@ export class CrawlerService {
         });
       }
 
-      console.log('[Crawler] 사용하는 frame:', nestedIframe ? 'nested mainFrame (본문)' : '현재 frame');
-      console.log('[Crawler] 전체 HTML 길이:', contentHtml.length);
+      // console.log('[Crawler] 사용하는 frame:', nestedIframe ? 'nested mainFrame (본문)' : '현재 frame');
+      // console.log('[Crawler] 전체 HTML 길이:', contentHtml.length);
 
-      console.log('[Crawler] 전체 HTML 길이:', contentHtml.length);
-      console.log('[Crawler] HTML 미리보기 (처리 1000자):', contentHtml.substring(0, 1000));
+      // console.log('[Crawler] 전체 HTML 길이:', contentHtml.length);
+      // console.log('[Crawler] HTML 미리보기 (처리 1000자):', contentHtml.substring(0, 1000));
 
       const $ = cheerio.load(contentHtml);
 
@@ -155,7 +155,7 @@ export class CrawlerService {
       });
 
       if (!title && !content) {
-        console.warn('[Crawler] 제목과 본문을 모두 찾지 못함');
+        // console.warn('[Crawler] 제목과 본문을 모두 찾지 못함');
       }
 
       return {
@@ -201,7 +201,7 @@ export class CrawlerService {
   private extractTitle($: cheerio.CheerioAPI, outerTitle?: string): string {
     // outer frame의 title이 있으면 먼저 처리
     if (outerTitle) {
-      console.log('[Crawler] outer title 사용:', outerTitle);
+      // console.log('[Crawler] outer title 사용:', outerTitle);
       // 다양한 형식의 네이버 블로그 접미사 제거
       let cleanTitle = outerTitle
         .replace(/:: 네이버블로그$/, '')
@@ -213,7 +213,7 @@ export class CrawlerService {
         .trim();
 
       if (cleanTitle && cleanTitle.length > 0) {
-        console.log('[Crawler] outer title에서 제목 추출:', cleanTitle);
+        // console.log('[Crawler] outer title에서 제목 추출:', cleanTitle);
         return cleanTitle;
       }
     }
@@ -232,14 +232,14 @@ export class CrawlerService {
     for (const selector of titleSelectors) {
       const title = $(selector).first().text().trim();
       if (title && title.length > 0 && selector !== 'title') {
-        console.log(`[Crawler] 제목 발견 (${selector}):`, title);
+        // console.log(`[Crawler] 제목 발견 (${selector}):`, title);
         return title;
       }
     }
 
     // title 태그에서 블로그 이름 제거하고 시도
     const htmlTitle = $('title').text().trim();
-    console.log('[Crawler] HTML title 원본:', htmlTitle);
+    // console.log('[Crawler] HTML title 원본:', htmlTitle);
     if (htmlTitle) {
       // 다양한 형식의 네이버 블로그 접미사 제거
       let cleanTitle = htmlTitle
@@ -252,16 +252,16 @@ export class CrawlerService {
         .trim();
 
       if (cleanTitle && cleanTitle.length > 0) {
-        console.log('[Crawler] HTML title에서 제목 추출:', cleanTitle);
+        // console.log('[Crawler] HTML title에서 제목 추출:', cleanTitle);
         return cleanTitle;
       }
     }
 
-    console.warn('[Crawler] 제목을 찾지 못함, 사용한 선택자:', titleSelectors);
+    // console.warn('[Crawler] 제목을 찾지 못함, 사용한 선택자:', titleSelectors);
     // 디버깅: 사용 가능한 모든 h1, h2, h3 태그 출력
-    console.log('[Crawler] 발견된 제목 태그들:');
+    // console.log('[Crawler] 발견된 제목 태그들:');
     $('h1, h2, h3').each((i, el) => {
-      console.log(`[Crawler] - ${$(el).get(0).tagName}: ${$(el).text().trim().substring(0, 50)}`);
+      // console.log(`[Crawler] - ${$(el).get(0).tagName}: ${$(el).text().trim().substring(0, 50)}`);
     });
     return ''; // 제목을 찾지 못한 경우
   }
@@ -288,14 +288,14 @@ export class CrawlerService {
       if (content.length > 0) {
         const text = this.cleanText(content.text());
         if (text.length > 50) { // 충분한 내용이 있는지 확인
-          console.log(`[Crawler] 본문 발견 (${selector}):`, text.length, '자');
-          console.log(`[Crawler] 본문 내용 (3000자):`, text.substring(0, 3000));
+          // console.log(`[Crawler] 본문 발견 (${selector}):`, text.length, '자');
+          // console.log(`[Crawler] 본문 내용 (3000자):`, text.substring(0, 3000));
           return text;
         }
       }
     }
 
-    console.warn('[Crawler] 본문을 찾지 못함, 사용한 선택자:', contentSelectors);
+    // console.warn('[Crawler] 본문을 찾지 못함, 사용한 선택자:', contentSelectors);
     return ''; // 본문을 찾지 못한 경우
   }
 
@@ -351,28 +351,28 @@ export class CrawlerService {
       // 본문 컨테이너 찾기
       let contentContainer = this.findContentContainer($);
       if (!contentContainer || contentContainer.length === 0) {
-        console.warn('[Crawler] 본문 컨테이너를 찾지 못함');
+        // console.warn('[Crawler] 본문 컨테이너를 찾지 못함');
         return sections;
       }
 
       // 디버깅: 본문 컨테이너 내의 주요 요소 확인
-      console.log('[Crawler] 본문 컨테이너 내 요소 확인:');
-      console.log(`  - .se-component-content: ${contentContainer.find('.se-component-content').length}개`);
-      console.log(`  - .se-module-image-link: ${contentContainer.find('.se-module-image-link').length}개`);
-      console.log(`  - img: ${contentContainer.find('img').length}개`);
-      console.log(`  - [id^="SE-"]: ${contentContainer.find('[id^="SE-"]').length}개`);
+      // console.log('[Crawler] 본문 컨테이너 내 요소 확인:');
+      // console.log(`  - .se-component-content: ${contentContainer.find('.se-component-content').length}개`);
+      // console.log(`  - .se-module-image-link: ${contentContainer.find('.se-module-image-link').length}개`);
+      // console.log(`  - img: ${contentContainer.find('img').length}개`);
+      // console.log(`  - [id^="SE-"]: ${contentContainer.find('[id^="SE-"]').length}개`);
 
       // 본문 컨테이너에 .se-component-content가 없으면 body로 다시 찾기
       if (contentContainer.find('.se-component-content').length === 0) {
-        console.log('[Crawler] 본문 컨테이너에 .se-component-content 없음, body 사용');
+        // console.log('[Crawler] 본문 컨테이너에 .se-component-content 없음, body 사용');
         contentContainer = $('body');
-        console.log('[Crawler] body 내 요소 확인:');
-        console.log(`  - .se-component-content: ${contentContainer.find('.se-component-content').length}개`);
+        // console.log('[Crawler] body 내 요소 확인:');
+        // console.log(`  - .se-component-content: ${contentContainer.find('.se-component-content').length}개`);
       }
 
       // 네이버 블로그 구조: .se-module-image-link 안의 이미지만 찾기
       const imageLinks = contentContainer.find('.se-module-image-link').toArray();
-      console.log('[Crawler] 발견된 .se-module-image-link 개수:', imageLinks.length);
+      // console.log('[Crawler] 발견된 .se-module-image-link 개수:', imageLinks.length);
 
       // 각 이미지 다음 텍스트를 섹션으로 추출
       imageLinks.forEach((link, index) => {
@@ -382,20 +382,20 @@ export class CrawlerService {
 
         // 본문 이미지 필터링
         if (!this.isContentImage(imageUrl)) {
-          console.log(`[Crawler] 이미지 ${index + 1}: 본문 이미지가 아님, 스킵 (${imageUrl.substring(0, 50)}...)`);
+          // console.log(`[Crawler] 이미지 ${index + 1}: 본문 이미지가 아님, 스킵 (${imageUrl.substring(0, 50)}...)`);
           return;
         }
 
         // 현재 이미지가 있는 .se-component-content 찾기
         const currentSection = $link.closest('.se-component-content');
         if (!currentSection.length) {
-          console.warn(`[Crawler] 이미지 ${index + 1}: 부모 섹션을 찾지 못함`);
+          // console.warn(`[Crawler] 이미지 ${index + 1}: 부모 섹션을 찾지 못함`);
           return;
         }
 
         // 디버깅: 현재 섹션 정보
         const currentId = currentSection.attr('id') || currentSection.attr('class') || 'unknown';
-        console.log(`[Crawler] 이미지 ${index + 1}: 현재 섹션 = ${currentId}`);
+        // console.log(`[Crawler] 이미지 ${index + 1}: 현재 섹션 = ${currentId}`);
 
         // 다음 섹션 찾기 (상위 요소의 형제 요소 안의 .se-component-content)
         let nextSection: cheerio.Cheerio<any> = $();
@@ -416,7 +416,7 @@ export class CrawlerService {
           nextSection = currentSection.nextAll('.se-component-content').first();
         }
 
-        console.log(`[Crawler] 이미지 ${index + 1}: 다음 섹션 발견 = ${nextSection.length > 0 ? '있음' : '없음'}`);
+        // console.log(`[Crawler] 이미지 ${index + 1}: 다음 섹션 발견 = ${nextSection.length > 0 ? '있음' : '없음'}`);
 
         let text = '';
 
@@ -426,20 +426,20 @@ export class CrawlerService {
           text = this.cleanText(text);
         } else {
           // 마지막 섹션인 경우
-          console.log(`[Crawler] 이미지 ${index + 1}: 다음 섹션 없음 (마지막 이미지)`);
+          // console.log(`[Crawler] 이미지 ${index + 1}: 다음 섹션 없음 (마지막 이미지)`);
         }
 
         if (text.length > 10) {
           sections.push({ text });
-          console.log(`[Crawler] 섹션 ${index + 1}: ${text.length}자, ${this.countSentences(text)}문장`);
-          console.log(`[Crawler] 섹션 ${index + 1} 텍스트: ${text.substring(0, 100)}...`);
+          // console.log(`[Crawler] 섹션 ${index + 1}: ${text.length}자, ${this.countSentences(text)}문장`);
+          // console.log(`[Crawler] 섹션 ${index + 1} 텍스트: ${text.substring(0, 100)}...`);
         } else {
-          console.log(`[Crawler] 이미지 ${index + 1}: 텍스트 없음 또는 너무 짧음 (${text.length}자)`);
+          // console.log(`[Crawler] 이미지 ${index + 1}: 텍스트 없음 또는 너무 짧음 (${text.length}자)`);
         }
       });
 
     } catch (error) {
-      console.error('[Crawler] 섹션 텍스트 추출 오류:', error);
+      // console.error('[Crawler] 섹션 텍스트 추출 오류:', error);
     }
 
     return sections;
@@ -492,7 +492,7 @@ export class CrawlerService {
 
       return this.cleanText(text);
     } catch (error) {
-      console.error('[Crawler] 텍스트 추출 오류:', error);
+      // console.error('[Crawler] 텍스트 추출 오류:', error);
       return '';
     }
   }
@@ -515,7 +515,7 @@ export class CrawlerService {
     for (const selector of selectors) {
       const container = $(selector).first();
       if (container.length > 0) {
-        console.log(`[Crawler] 본문 컨테이너 발견 (${selector})`);
+        // console.log(`[Crawler] 본문 컨테이너 발견 (${selector})`);
         return container;
       }
     }
@@ -523,16 +523,16 @@ export class CrawlerService {
     // fallback: 모든 .se-component-content 찾기
     const allSections = $('.se-component-content');
     if (allSections.length > 1) {
-      console.log(`[Crawler] 본문 컨테이너 발견 (.se-component-content ${allSections.length}개)`);
+      // console.log(`[Crawler] 본문 컨테이너 발견 (.se-component-content ${allSections.length}개)`);
       // 모든 섹션을 포함하는 최상위 요소 찾기
       const parent = allSections.first().parent();
       if (parent.length) {
-        console.log(`[Crawler] 상위 컨테이너 사용 (${parent[0].tagName})`);
+        // console.log(`[Crawler] 상위 컨테이너 사용 (${parent[0].tagName})`);
         return parent;
       }
     }
 
-    console.warn('[Crawler] 본문 컨테이너를 찾지 못함, body 사용');
+    // console.warn('[Crawler] 본문 컨테이너를 찾지 못함, body 사용');
     return $('body');
   }
 
@@ -541,11 +541,11 @@ export class CrawlerService {
    */
   private async analyzeNaverBlogStructure(frame: any): Promise<void> {
     try {
-      console.log('[Crawler] 네이버 블로그 구조 분석 시작...');
+      // console.log('[Crawler] 네이버 블로그 구조 분석 시작...');
 
       // .se-component-content 찾기
       const components = await frame.locator('.se-component-content').all();
-      console.log(`[Crawler] .se-component-content 개수: ${components.length}`);
+      // console.log(`[Crawler] .se-component-content 개수: ${components.length}`);
 
       // 각 컴포넌트 분석
       for (let i = 0; i < Math.min(components.length, 10); i++) {
@@ -558,22 +558,22 @@ export class CrawlerService {
         const text = await component.textContent() || '';
         const textLength = text.trim().length;
 
-        console.log(`[Crawler] 컴포넌트 ${i + 1}:`);
-        console.log(`  - 이미지: ${hasImage ? '있음' : '없음'}`);
-        console.log(`  - 텍스트: ${textLength}자`);
-        console.log(`  - HTML (200자): ${html.substring(0, 200)}`);
+        // console.log(`[Crawler] 컴포넌트 ${i + 1}:`);
+        // console.log(`  - 이미지: ${hasImage ? '있음' : '없음'}`);
+        // console.log(`  - 텍스트: ${textLength}자`);
+        // console.log(`  - HTML (200자): ${html.substring(0, 200)}`);
 
         // 이미지가 있으면 URL 출력
         if (hasImage) {
           const imgMatch = html.match(/<img[^>]+src="([^"]+)"/);
           if (imgMatch) {
-            console.log(`  - 이미지 URL: ${imgMatch[1].substring(0, 80)}...`);
+            // console.log(`  - 이미지 URL: ${imgMatch[1].substring(0, 80)}...`);
           }
         }
       }
 
     } catch (error) {
-      console.error('[Crawler] 구조 분석 오류:', error);
+      // console.error('[Crawler] 구조 분석 오류:', error);
     }
   }
 
