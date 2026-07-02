@@ -8,6 +8,8 @@ import type { RunnableConfig } from '@langchain/core/runnables';
  * Photo Agent Node
  * 업로드된 이미지를 분석하여 장소, 활동, 음식, 분위기, 타임라인을 추출
  * Gemini 2.5 Flash를 사용하여 이미지 분석을 수행합니다.
+ *
+ * 캐시 전략: 이미지별 개별 캐싱 (이미지 추가/제거 시에도 기존 이미지는 캐시 히트)
  */
 export async function photoNode(
   state: BlogState,
@@ -26,30 +28,109 @@ export async function photoNode(
   try {
     const photoCache = getPhotoCacheService();
 
-    // 이미지 파일 경로/파일명 기반 캐시 키 생성
-    const imageKeys = images.map(img => `${img.path || ''}:${img.filename || ''}`).join('|');
-    const cacheKey = imageKeys;
-    console.log('[Photo Agent] 캐시 키 (파일 기반):', imageKeys.substring(0, 50) + '...');
+    // 이미지별 개별 캐시 키 생성
+    const imageKeys = images.map((img, idx) => ({
+      idx,
+      key: `${img.path || ''}:${img.filename || ''}`,
+      image: img,
+    }));
 
-    // 캐시 확인
-    const cached = await photoCache.get(cacheKey);
-    if (cached) {
-      console.log('[Photo Agent] 캐시된 결과 사용');
-      return {
-        photoAnalysis: cached,
-      };
+    console.log('[Photo Agent] 개별 캐시 조회 시작...');
+
+    // 개별 캐시 조회 (병렬)
+    const cacheResults = await Promise.all(
+      imageKeys.map(async ({ key }) => {
+        const cached = await photoCache.get(key);
+        return { key, cached };
+      })
+    );
+
+    // 캐시된 것과 안 된 것 분리
+    const cachedImages: Array<{ idx: number; data: any }> = [];
+    const uncachedImages: Array<{ idx: number; key: string; image: any }> = [];
+
+    cacheResults.forEach(({ key, cached }, i) => {
+      if (cached) {
+        console.log(`[Photo Agent] 이미지 ${i + 1} 캐시 히트:`, key.substring(0, 30) + '...');
+        cachedImages.push({ idx: i, data: cached });
+      } else {
+        console.log(`[Photo Agent] 이미지 ${i + 1} 캐시 미스:`, key.substring(0, 30) + '...');
+        uncachedImages.push({ idx: i, key, image: imageKeys[i].image });
+      }
+    });
+
+    console.log(`[Photo Agent] 캐시 히트: ${cachedImages.length}/${images.length}, 캐시 미스: ${uncachedImages.length}`);
+
+    // 캐시 미스인 이미지들만 Gemini 분석
+    let newAnalysis: any = null;
+    if (uncachedImages.length > 0) {
+      console.log('[Photo Agent] 캐시 미스한 이미지 Gemini 분석 시작...');
+      const gemini = getGeminiService();
+
+      // 원본 순서대로 정렬하여 분석
+      const imagesToAnalyze = uncachedImages
+        .sort((a, b) => a.idx - b.idx)
+        .map(item => item.image);
+
+      newAnalysis = await gemini.analyzeImages(imagesToAnalyze);
+
+      console.log('[Photo Agent] Gemini 분석 완료');
+
+      // 개별 캐시 저장
+      await Promise.all(
+        uncachedImages.map((item, i) => {
+          // newAnalysis.images는 정렬된 순서대로 있음
+          const imageIndex = uncachedImages
+            .sort((a, b) => a.idx - b.idx)
+            .findIndex(u => u.idx === item.idx);
+
+          if (imageIndex !== -1 && newAnalysis.images[imageIndex]) {
+            return photoCache.set(item.key, newAnalysis.images[imageIndex]);
+          }
+          return Promise.resolve();
+        })
+      );
+
+      console.log('[Photo Agent] 개별 캐시 저장 완료');
     }
 
-    console.log('[Photo Agent] 캐시 미스, Gemini 이미지 분석 시작...');
-    const gemini = getGeminiService();
+    // 결과 합치기 (원본 순서대로)
+    const finalImages: any[] = [];
 
-    // Gemini로 이미지 분석
-    const photoAnalysis = await gemini.analyzeImages(images);
-    console.log('[Photo Agent] 이미지 분석 완료:', photoAnalysis);
+    // 캐시된 이미지들 먼저 추가
+    cachedImages
+      .sort((a, b) => a.idx - b.idx)
+      .forEach(({ idx, data }) => {
+        finalImages[idx] = data;
+      });
 
-    // 캐시 저장
-    await photoCache.set(cacheKey, photoAnalysis);
+    // 새로 분석된 이미지들 추가
+    if (newAnalysis) {
+      uncachedImages
+        .sort((a, b) => a.idx - b.idx)
+        .forEach((item, i) => {
+          // newAnalysis.images는 정렬된 순서대로 있음
+          const imageIndex = uncachedImages
+            .sort((a, b) => a.idx - b.idx)
+            .findIndex(u => u.idx === item.idx);
 
+          if (imageIndex !== -1 && newAnalysis.images[imageIndex]) {
+            finalImages[item.idx] = newAnalysis.images[imageIndex];
+          }
+        });
+    }
+
+    // 전체 PhotoAnalysis 구성
+    const photoAnalysis: PhotoAnalysis = {
+      images: finalImages,
+      places: [...new Set(finalImages.flatMap((img: any) => img.places || []))],
+      activities: [...new Set(finalImages.flatMap((img: any) => img.activities || []))],
+      foods: [...new Set(finalImages.flatMap((img: any) => img.foods || []))],
+      mood: finalImages.length > 0 ? (finalImages[0] as any).mood || '' : '',
+      timeline: finalImages.flatMap((img: any) => img.timeline ? [img.timeline] : []),
+    };
+
+    console.log('[Photo Agent] 최종 결과 구성 완료');
     return {
       photoAnalysis,
     };
