@@ -6,6 +6,24 @@ export interface UploadedImage {
   base64?: string;
 }
 
+// 카테고리 기반 사진 정렬을 위한 표시 카테고리
+export enum PhotoDisplayCategory {
+  EXTERIOR = 'exterior',      // 외관 - 건물 외관, 간판/입구
+  INTERIOR = 'interior',      // 내부 - 실내 내부, 인테리어, 야외 좌석
+  MENU = 'menu',              // 메뉴판 - 메뉴판 사진
+  FOOD = 'food',              // 음식 - 테이블 위 음식 (전체)
+  DETAIL = 'detail'           // 디테일 컷 - 음식 디테일/클로즈업
+}
+
+// 카테고리 표시 순서 (외관 → 내부 → 메뉴판 → 음식 → 디테일 컷)
+export const CATEGORY_ORDER: PhotoDisplayCategory[] = [
+  PhotoDisplayCategory.EXTERIOR,
+  PhotoDisplayCategory.INTERIOR,
+  PhotoDisplayCategory.MENU,
+  PhotoDisplayCategory.FOOD,
+  PhotoDisplayCategory.DETAIL
+];
+
 // 개별 이미지 분석 결과
 export interface ImageAnalysis {
   index: number;           // 이미지 순서 (0-based)
@@ -35,6 +53,8 @@ export interface PhotoAnalysis {
   foods: string[];           // 전체 음식 목록 (중복 제거)
   mood: string;              // 전체 분위기
   timeline: TimelineItem[]; // 동선 요약
+  sortedImageOrder?: number[]; // 카테고리 정렬 후의 이미지 순서 (원래 인덱스 배열)
+  // 예: 업로드 순서 [0,1,2,3]이 정렬 후 [2,0,3,1]이 되면 sortedImageOrder = [2,0,3,1]
 }
 
 export interface TimelineItem {

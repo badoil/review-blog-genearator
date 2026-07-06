@@ -2,6 +2,7 @@ import type { BlogState } from '../state';
 import type { PhotoAnalysis } from '../../types/photo';
 import { getGeminiService } from '../../services/gemini.service';
 import { getPhotoCacheService } from '../../services/cache.service';
+import { sortImagesByCategory, getImageCategory, getCategoryName } from '../../utils/category-mapper';
 import type { RunnableConfig } from '@langchain/core/runnables';
 
 /**
@@ -131,6 +132,35 @@ export async function photoNode(
     };
 
     console.log('[Photo Agent] 최종 결과 구성 완료');
+
+    // 카테고리 순서로 이미지 재배열 (외관 → 내부 → 메뉴판 → 음식 → 디테일 컷)
+    console.log('[Photo Agent] 카테고리 기반 이미지 정렬 시작...');
+
+    // 정렬 전 원래 인덱스 저장
+    const originalIndices = finalImages.map((img, i) => ({ originalIndex: i, category: getImageCategory(img) }));
+    console.log('[Photo Agent] 정렬 전 순서:', originalIndices.map((item, i) => `${i + 1}. ${getCategoryName(item.category)} (idx:${item.originalIndex})`).join(', '));
+
+    photoAnalysis.images = sortImagesByCategory(finalImages);
+
+    // 정렬 후 원래 인덱스 순서 저장 (sortedImageOrder)
+    photoAnalysis.sortedImageOrder = photoAnalysis.images.map(img => {
+      // 정렬된 이미지의 현재 index는 새로운 위치
+      // 원래 인덱스를 찾으려면 originalIndices에서 매칭해야 함
+      // 각 이미지는 description 등으로 식별 가능
+      const originalIndex = originalIndices.findIndex(item => {
+        const originalImg = finalImages[item.originalIndex];
+        return originalImg.description === img.description &&
+               originalImg.scene === img.scene &&
+               originalImg.view === img.view &&
+               originalImg.focus === img.focus;
+      });
+      return originalIndex !== -1 ? originalIndices[originalIndex].originalIndex : img.index;
+    });
+
+    console.log('[Photo Agent] 정렬 후 순서:', photoAnalysis.images.map((img, i) => `${i + 1}. ${getCategoryName(getImageCategory(img))} (originalIdx:${photoAnalysis.sortedImageOrder![i]})`).join(', '));
+    console.log('[Photo Agent] sortedImageOrder:', photoAnalysis.sortedImageOrder);
+    console.log('[Photo Agent] 카테고리 기반 정렬 완료');
+
     return {
       photoAnalysis,
     };

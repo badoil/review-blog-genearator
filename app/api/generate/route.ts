@@ -140,11 +140,20 @@ export async function POST(request: NextRequest) {
 
     console.log('[API] 블로그 생성 성공');
 
+    // 정렬된 이미지 순서에 따라 imageObjects 재배열
+    let sortedImageObjects = imageObjects;
+    if (result.photoAnalysis?.sortedImageOrder) {
+      console.log('[API] 카테고리 순서에 따라 imageObjects 재배열...');
+      console.log('[API] sortedImageOrder:', result.photoAnalysis.sortedImageOrder);
+      sortedImageObjects = result.photoAnalysis.sortedImageOrder.map(idx => imageObjects[idx]);
+      console.log('[API] imageObjects 재배열 완료');
+    }
+
     // 이미지와 글이 합쳐진 HTML 생성
     const finalContent = result.finalPost || result.draft || '';
     const contentWithImages = renderContentWithImages(
       finalContent,
-      imageObjects,
+      sortedImageObjects,
       result.imagePlacements || []
     );
 
@@ -154,7 +163,7 @@ export async function POST(request: NextRequest) {
       draft: result.draft,
       finalPost: result.finalPost,
       finalContentWithImages: contentWithImages,  // 이미지 포함 HTML
-      images: imageObjects,
+      images: sortedImageObjects,  // 정렬된 순서의 이미지
       imagePlacements: result.imagePlacements,
     });
   } catch (error) {
