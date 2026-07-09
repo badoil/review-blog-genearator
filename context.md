@@ -440,6 +440,113 @@ GEMINI_MODEL=gemini-2.5-flash
    - Writer Agent 수정 (그룹별 텍스트 생성)
    - Graph 구조 변경 (Photo+Style → Grouping → Writer → Reviewer)
 
+---
+
+## 카테고리 기반 사진 정렬 (2026-07-06)
+
+### 목적
+
+사진을 업로드 순서와 상관없이 지정된 카테고리 순서대로 블로그 글에 배치합니다.
+
+### 카테고리 순서
+
+1. **외관** - 건물 외관, 간판/입구
+2. **내부** - 실내 내부, 인테리어, 야외 좌석
+3. **메뉴판** - 메뉴판 사진
+4. **음식** - 테이블 위 음식 (전체)
+5. **디테일 컷** - 음식 디테일/클로즈업
+
+### 구현
+
+**1. PhotoDisplayCategory 타입 (`lib/types/photo.ts`)**
+
+```ts
+export enum PhotoDisplayCategory {
+  EXTERIOR = 'exterior',      // 외관
+  INTERIOR = 'interior',      // 내부
+  MENU = 'menu',              // 메뉴판
+  FOOD = 'food',              // 음식 (전체)
+  DETAIL = 'detail'           // 디테일 컷 (음식 클로즈업)
+}
+
+export const CATEGORY_ORDER: PhotoDisplayCategory[] = [
+  PhotoDisplayCategory.EXTERIOR,
+  PhotoDisplayCategory.INTERIOR,
+  PhotoDisplayCategory.MENU,
+  PhotoDisplayCategory.FOOD,
+  PhotoDisplayCategory.DETAIL
+];
+```
+
+**2. Category Mapper (`lib/utils/category-mapper.ts`)**
+
+- `mapToDisplayCategory()`: scene/view/focus 값을 카테고리로 매핑
+- `sortImagesByCategory()`: 이미지를 카테고리 순서로 정렬
+
+**3. Photo Agent 수정 (`lib/agent/nodes/photo-agent.ts`)**
+
+- 사진 분석 후 `sortImagesByCategory()` 호출로 이미지 재배열
+- `sortedImageOrder`를 반환하여 원래 순서 정보 전달
+
+**4. API Route 수정 (`app/api/generate/route.ts`)**
+
+- `sortedImageOrder`를 사용하여 `imageObjects`를 재배열
+- 텍스트와 이미지가 같은 순서로 나오도록 동기화
+
+### 작동 방식
+
+1. Photo Agent가 사진 분석 완료
+2. `sortImagesByCategory()`가 이미지를 5개 카테고리 순서로 재배열
+3. 재배열된 순서대로 `index` 필드 업데이트
+4. `sortedImageOrder`를 반환 (원래 인덱스 매핑)
+5. `route.ts`에서 `sortedImageOrder`를 사용하여 `imageObjects`를 재배열
+6. Writer Agent는 정렬된 순서대로 글 생성
+7. 텍스트와 이미지가 카테고리 순서대로 일치하여 나옴
+
+### Scene/View/Focus 매핑 규칙
+
+| 카테고리 | Scene | View | Focus |
+|---------|-------|------|-------|
+| MENU | "메뉴판", "간판" | (any) | "간판" |
+| EXTERIOR | "건물 외관", "입구", "파사드" | 전경, 중거리 | "건물", "간판" |
+| INTERIOR | "실내 내부", "인테리어", "야외 좌석", "주방" | (any) | "파라솔", "정원" |
+| FOOD | "테이블 위 음식" | 전경, 중거리 | "음식" |
+| DETAIL | (any) | "클로즈업" | "음식" |
+
+### 로그 확인
+
+```
+[Photo Agent] 정렬 전 순서: 1. 음식 (idx:0), 2. 내부 (idx:1)...
+[Photo Agent] 정렬 후 순서: 1. 외관 (originalIdx:2), 2. 내부 (originalIdx:1)...
+[Photo Agent] sortedImageOrder: [2, 1, 3, 0, 4]
+[API] imageObjects 재배열 완료
+```
+
+---
+
+## 섹션 패턴 유지 수정 (2026-07-02)
+
+### 문제
+
+Reviewer Agent가 글을 다듬는 과정에서 "섹션 1:", "섹션 2:" 패턴을 제거하여 이미지가 배치되지 않는 문제가 발생했습니다.
+
+### 해결
+
+`lib/agent/nodes/reviewer-agent.ts`에 섹션 패턴 유지 지시를 추가했습니다.
+
+**시스템 프롬프트 추가:**
+```
+**매우 중요: 섹션 패턴 유지**
+- "섹션 1:", "섹션 2:" 같은 섹션 구분 패턴은 **절대 제거하지 마세요**
+- 섹션 패턴은 그대로 유지하면서 내용만 다듬어주세요
+- 이 패턴은 이미지를 자동으로 배치하는 데 사용됩니다
+```
+
+**사용자 프롬프트 추가:**
+```
+**중요: "섹션 N:" 패턴은 반드시 유지해주세요. 이 패턴을 제거하거나 변경하지 마세요!**
+```
+
 
 ## Langfuse 연동 (진행중)
 
